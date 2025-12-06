@@ -32,3 +32,21 @@ class UserRegistrationForm(forms.ModelForm):
         if commit:
             user.save()
         return user
+
+
+class AccountSettingsForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ['nickname']
+        widgets = {
+            'nickname': forms.TextInput(attrs={'class': 'form-control', 'maxlength': '6'}),
+        }
+        help_texts = {
+            'nickname': 'Strictly letters only, max 6 characters. Must be unique.'
+        }
+
+    def clean_nickname(self):
+        nickname = self.cleaned_data.get('nickname')
+        if not nickname:
+            return None
+        return nickname

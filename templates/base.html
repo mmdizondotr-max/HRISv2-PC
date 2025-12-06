@@ -24,7 +24,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="/">
+            <a class="navbar-brand" href="{% if user.is_authenticated %}{% url 'attendance:home' %}{% else %}/{% endif %}">
                 {% load static %}
                 <img src="{% static 'img/iMDiz.png' %}" alt="iMDiz Logo">
                 iMDiz HRIS
@@ -44,7 +44,7 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'scheduling:my_schedule' %}">Schedule</a>
                         </li>
-                        {% if user.tier == 'supervisor' or user.tier == 'administrator' %}
+                        {% if user.tier == 'supervisor' or user.tier == 'administrator' or user.is_superuser %}
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="adminDropdown" role="button" data-bs-toggle="dropdown">
                                     Management
@@ -55,6 +55,9 @@
                                 </ul>
                             </li>
                         {% endif %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'accounts:account_settings' %}">Account Info</a>
+                        </li>
                         <li class="nav-item">
                             <form action="{% url 'logout' %}" method="post" class="d-inline">
                                 {% csrf_token %}

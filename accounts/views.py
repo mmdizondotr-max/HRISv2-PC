@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib import messages
-from .forms import UserRegistrationForm
+from .forms import UserRegistrationForm, AccountSettingsForm
 from django.contrib.auth.decorators import login_required
 from .models import User
 from django.http import HttpResponseForbidden
@@ -54,3 +54,16 @@ def approvals(request):
         return redirect('accounts:approvals')
 
     return render(request, 'accounts/approvals.html', {'pending_users': pending_users})
+
+@login_required
+def account_settings(request):
+    if request.method == 'POST':
+        form = AccountSettingsForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Account settings updated.')
+            return redirect('accounts:account_settings')
+    else:
+        form = AccountSettingsForm(instance=request.user)
+
+    return render(request, 'accounts/account_settings.html', {'form': form})
