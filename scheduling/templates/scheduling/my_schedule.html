@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}My Schedule - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<h2>My Upcoming Schedule</h2>
+
+{% if shifts %}
+    <div class="row">
+        {% for shift in shifts %}
+        <div class="col-md-4 mb-3">
+            <div class="card border-{{ shift.role|yesno:'primary,secondary' }}">
+                <div class="card-header">
+                    {{ shift.date|date:"l, F d, Y" }}
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ shift.shop.name }}</h5>
+                    <p class="card-text">Role: <strong>{{ shift.get_role_display }}</strong></p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p>No upcoming shifts found.</p>
+{% endif %}
+{% endblock %}

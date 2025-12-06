@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Time In/Out - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 text-center">
+        <h2 class="mb-4">Current Time: {{ current_time|date:"h:i:s A" }}</h2>
+        <p class="text-muted">(Source: ntp.pagasa.dost.gov.ph)</p>
+
+        <div class="card shadow">
+            <div class="card-body">
+                {% if todays_log %}
+                    <div class="alert alert-info">
+                        <strong>Time In:</strong> {{ todays_log.time_in|date:"h:i A" }} <br>
+                        <strong>Shop:</strong> {{ todays_log.shop.name }}
+                        {% if todays_log.time_out %}
+                            <br><strong>Latest Time Out:</strong> {{ todays_log.time_out|date:"h:i A" }}
+                        {% endif %}
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="time_out">
+                        <button type="submit" class="btn btn-danger btn-lg w-100">Time Out</button>
+                    </form>
+                {% else %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="time_in">
+
+                        <div class="mb-3 text-start">
+                            <label for="shop_id" class="form-label">Select Shop:</label>
+                            <select name="shop_id" id="shop_id" class="form-select" required>
+                                <option value="">-- Choose Shop --</option>
+                                {% for shop in shops %}
+                                    <option value="{{ shop.id }}">{{ shop.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-success btn-lg w-100">Time In</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <!-- Placeholder for DTR link -->
+            <a href="#" class="btn btn-outline-primary">View Daily Time Record</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

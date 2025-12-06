@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block title %}Schedule Generator - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<h2>Schedule Generation</h2>
+
+{% if not is_saturday %}
+    <div class="alert alert-warning">
+        Warning: It is not Saturday. Generation is normally restricted to Saturdays.
+    </div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            <div class="btn-group">
+                <button type="submit" name="generate" class="btn btn-primary">Generate / Regenerate Preview</button>
+                {% if schedule %}
+                    <button type="submit" name="publish" class="btn btn-success">Publish Schedule</button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if preview_shifts %}
+    <h3>Preview (Week of {{ schedule.week_start_date }})</h3>
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Shop</th>
+                    <th>Main Staff</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for shift in preview_shifts %}
+                <tr>
+                    <td>{{ shift.date|date:"D, M d" }}</td>
+                    <td>{{ shift.shop.name }}</td>
+                    <td>{{ shift.user.first_name }} {{ shift.user.last_name }}</td>
+                    <td>{{ shift.get_role_display }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <p>No preview generated yet for the upcoming week.</p>
+{% endif %}
+
+{% endblock %}
