@@ -25,7 +25,7 @@ def register(request):
 
 @login_required
 def approvals(request):
-    if request.user.tier not in ['supervisor', 'administrator']:
+    if not request.user.is_superuser and request.user.tier not in ['supervisor', 'administrator']:
         return HttpResponseForbidden("You are not authorized to view this page.")
 
     pending_users = User.objects.filter(is_active=False).order_by('-date_joined')
@@ -65,7 +65,7 @@ def account_settings(request):
 
 @login_required
 def account_list(request):
-    if request.user.tier not in ['supervisor', 'administrator']:
+    if not request.user.is_superuser and request.user.tier not in ['supervisor', 'administrator']:
         return HttpResponseForbidden("You are not authorized to view this page.")
 
     users = User.objects.all().order_by('last_name')
@@ -73,7 +73,7 @@ def account_list(request):
 
 @login_required
 def account_promote(request, user_id):
-    if request.user.tier not in ['supervisor', 'administrator']:
+    if not request.user.is_superuser and request.user.tier not in ['supervisor', 'administrator']:
         return HttpResponseForbidden("You are not authorized to view this page.")
 
     target_user = get_object_or_404(User, id=user_id)
