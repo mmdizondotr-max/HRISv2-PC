@@ -31,6 +31,15 @@ class Schedule(models.Model):
     def __str__(self):
         return f"Schedule for week of {self.week_start_date}"
 
+class ScheduleChangeLog(models.Model):
+    schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE, related_name='change_logs')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True) # User who made the change
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Change by {self.user} on {self.created_at}"
+
 class Shift(models.Model):
     ROLE_CHOICES = (
         ('main', 'Main Staff'),
@@ -64,10 +73,11 @@ class UserPriority(models.Model):
 class ShopRequirement(models.Model):
     """
     Stores the min staff requirement per shop.
-    Can be per day if needed, but assuming general requirement for now.
     """
     shop = models.OneToOneField('attendance.Shop', on_delete=models.CASCADE, related_name='requirement')
-    min_staff = models.PositiveIntegerField(default=1)
+    min_staff = models.PositiveIntegerField(default=1) # Keeping for safety, but will use new fields
+    required_main_staff = models.PositiveIntegerField(default=1)
+    required_reserve_staff = models.PositiveIntegerField(default=0)
 
     def __str__(self):
-        return f"{self.shop}: Min {self.min_staff}"
+        return f"{self.shop}: Main {self.required_main_staff}, Reserve {self.required_reserve_staff}"

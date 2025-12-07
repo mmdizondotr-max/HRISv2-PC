@@ -1,27 +1,72 @@
 {% extends 'base.html' %}
 
-{% block title %}My Schedule - iMDiz HRIS{% endblock %}
-
 {% block content %}
-<h2>My Upcoming Schedule</h2>
+<div class="row">
+    <div class="col-12">
+        {% if schedule %}
+            <h2>Schedule for Week of {{ schedule.week_start_date }}</h2>
+            {% if not schedule.is_published %}
+                <div class="alert alert-warning">This schedule is currently a DRAFT and has not been published.</div>
+            {% endif %}
 
-{% if shifts %}
-    <div class="row">
-        {% for shift in shifts %}
-        <div class="col-md-4 mb-3">
-            <div class="card border-{{ shift.role|yesno:'primary,secondary' }}">
-                <div class="card-header">
-                    {{ shift.date|date:"l, F d, Y" }}
-                </div>
-                <div class="card-body">
-                    <h5 class="card-title">{{ shift.shop.name }}</h5>
-                    <p class="card-text">Role: <strong>{{ shift.get_role_display }}</strong></p>
-                </div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm text-center">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date</th>
+                            {% for shop in shops %}
+                                <th colspan="2">{{ shop.name }}</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <th></th>
+                            {% for shop in shops %}
+                                <th>Main</th>
+                                <th>Reserve</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for date in dates %}
+                        <tr>
+                            <td class="fw-bold">{{ date|date:"D, M d" }}</td>
+                            {% for shop in shops %}
+                                <!-- Main Staff -->
+                                <td>
+                                    {% for user in matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                        <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                    {% endfor %}
+                                </td>
+                                <!-- Reserve Staff -->
+                                <td>
+                                    {% for user in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                        <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                    {% endfor %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-        </div>
-        {% endfor %}
+
+            {% if change_logs %}
+            <div class="mt-4">
+                <h4>Change Log</h4>
+                <ul class="list-group">
+                    {% for log in change_logs %}
+                        <li class="list-group-item">
+                            <small class="text-muted">{{ log.created_at }}</small>
+                            <strong>{{ log.user.username|default:"System" }}:</strong> {{ log.message }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+        {% else %}
+            <div class="alert alert-info">No schedule available for the upcoming week.</div>
+        {% endif %}
     </div>
-{% else %}
-    <p>No upcoming shifts found.</p>
-{% endif %}
+</div>
 {% endblock %}

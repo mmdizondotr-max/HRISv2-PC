@@ -1,56 +1,93 @@
 {% extends 'base.html' %}
-
-{% block title %}Schedule Generator - iMDiz HRIS{% endblock %}
+{% load schedule_extras %}
 
 {% block content %}
-<h2>Schedule Generation</h2>
+<div class="row">
+    <div class="col-12">
+        <h2>Schedule Generation & Management</h2>
 
-{% if not is_saturday %}
-    <div class="alert alert-warning">
-        Warning: It is not Saturday. Generation is normally restricted to Saturdays.
-    </div>
-{% endif %}
-
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="post">
+        <form method="post" class="mb-3">
             {% csrf_token %}
-            <div class="btn-group">
-                <button type="submit" name="generate" class="btn btn-primary">Generate / Regenerate Preview</button>
-                {% if schedule %}
+            {% if schedule.is_published %}
+                <button type="submit" name="generate" class="btn btn-warning" onclick="return confirm('Schedule is already published. Regenerating will wipe current shifts. Continue?')">Regenerate Schedule</button>
+                <button class="btn btn-secondary" disabled>Published</button>
+            {% else %}
+                <button type="submit" name="generate" class="btn btn-primary">Generate Schedule (Auto)</button>
+                {% if schedule.shifts.exists %}
                     <button type="submit" name="publish" class="btn btn-success">Publish Schedule</button>
                 {% endif %}
-            </div>
+            {% endif %}
         </form>
+
+        {% if schedule %}
+            <h4>Preview for Week of {{ schedule.week_start_date }}</h4>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm text-center">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date</th>
+                            {% for shop in shops %}
+                                <th colspan="2">{{ shop.name }}</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <th></th>
+                            {% for shop in shops %}
+                                <th>Main</th>
+                                <th>Reserve</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for date in dates %}
+                        <tr>
+                            <td class="fw-bold">{{ date|date:"D, M d" }}</td>
+                            {% for shop in shops %}
+                                <!-- Main Staff -->
+                                <td>
+                                    {% for shift in matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                        <div class="badge bg-primary mb-1 position-relative">
+                                            {{ shift.user.get_short_name_for_schedule }}
+                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                        </div><br>
+                                    {% endfor %}
+                                    <a href="{% url 'scheduling:shift_add' schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
+                                </td>
+                                <!-- Reserve Staff -->
+                                <td>
+                                    {% for shift in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                        <div class="badge bg-secondary mb-1 position-relative">
+                                            {{ shift.user.get_short_name_for_schedule }}
+                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                        </div><br>
+                                    {% endfor %}
+                                    <a href="{% url 'scheduling:shift_add' schedule.id date|date:'Y-m-d' shop.id 'backup' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
+                                </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if change_logs %}
+            <div class="mt-4">
+                <h4>Change Log</h4>
+                <ul class="list-group">
+                    {% for log in change_logs %}
+                        <li class="list-group-item">
+                            <small class="text-muted">{{ log.created_at }}</small>
+                            <strong>{{ log.user.username|default:"System" }}:</strong> {{ log.message }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+        {% else %}
+            <div class="alert alert-info">No schedule generated yet. Click Generate to start.</div>
+        {% endif %}
     </div>
 </div>
-
-{% if preview_shifts %}
-    <h3>Preview (Week of {{ schedule.week_start_date }})</h3>
-    <div class="table-responsive">
-        <table class="table table-bordered">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Shop</th>
-                    <th>Main Staff</th>
-                    <th>Role</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for shift in preview_shifts %}
-                <tr>
-                    <td>{{ shift.date|date:"D, M d" }}</td>
-                    <td>{{ shift.shop.name }}</td>
-                    <td>{{ shift.user.get_short_name_for_schedule }}</td>
-                    <td>{{ shift.get_role_display }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-{% else %}
-    <p>No preview generated yet for the upcoming week.</p>
-{% endif %}
-
 {% endblock %}

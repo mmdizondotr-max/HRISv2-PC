@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>Shop Management</h2>
+            <a href="{% url 'attendance:shop_create' %}" class="btn btn-success">Add New Shop</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Supervisors</th>
+                        <th>Staff Req (Main/Res)</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for shop in shops %}
+                    <tr>
+                        <td>{{ shop.name }}</td>
+                        <td>
+                            {% if shop.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% for sup in shop.supervisors.all %}
+                                <span class="badge bg-info text-dark">{{ sup.get_short_name_for_schedule }}</span>
+                            {% empty %}
+                                <span class="text-muted">None</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if shop.requirement %}
+                                {{ shop.requirement.required_main_staff }} / {{ shop.requirement.required_reserve_staff }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'attendance:shop_edit' shop.id %}" class="btn btn-sm btn-primary">Edit</a>
+                            <a href="{% url 'attendance:shop_delete' shop.id %}" class="btn btn-sm btn-danger">Delete</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5">No shops found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

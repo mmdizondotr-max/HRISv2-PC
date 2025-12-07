@@ -1,9 +1,9 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 import datetime
-from scheduling.models import Schedule, Preference, UserPriority, Shift
+from scheduling.models import Schedule
 from attendance.models import Shop
-from scheduling.views import _generate_schedule, _publish_schedule
+from scheduling.views import _generate_schedule
 
 class Command(BaseCommand):
     help = 'Automatically generates and publishes schedule if not done by Sunday 12AM'
@@ -17,24 +17,38 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("It is not Sunday. Skipping auto-generation."))
             return
 
-        target_start = today # Sunday is the start
+        # Target next week (starting next Sunday? No, usually generated for UPCOMING week)
+        # Requirement: "auto-generated... by Sunday 12AM to ensure that staff have ample time to check their NEXT week schedule."
+        # If today is Sunday (Start of Week A), and we generate for "Next Week", that means Week B (starting today+7).
+        # "Ample time" implies we are generating for the week *after* the current one starts.
+        # Or does it mean generating for the week that *just started* (today)?
+        # If I generate on Sunday 12AM (start of Week A), and staff check it for "next week schedule", usually they mean Week A (starting today) is "current", Week B is "next".
+        # But if the schedule is for "this coming week" (Week A), and I generate it AT THE START of Week A, that is NOT ample time.
+        # So it must be for Week B (starting today + 7).
+
+        target_start = today + datetime.timedelta(days=7)
 
         # Check if schedule exists
-        try:
-            schedule = Schedule.objects.get(week_start_date=target_start)
-            if schedule.is_published:
-                self.stdout.write(self.style.SUCCESS("Schedule already published."))
-                return
-        except Schedule.DoesNotExist:
-            pass
+        schedule, created = Schedule.objects.get_or_create(week_start_date=target_start)
 
+        if schedule.shifts.exists():
+            # Schedule has content, meaning someone generated it.
+            if not schedule.is_published:
+                self.stdout.write("Draft schedule exists. Auto-publishing it...")
+                schedule.is_published = True
+                schedule.save()
+            else:
+                self.stdout.write(self.style.SUCCESS("Schedule already published."))
+            return
+
+        # If no shifts, it means it's empty (just created or empty). Generate it.
         self.stdout.write("Generating schedule...")
         shops = Shop.objects.filter(is_active=True)
-        # Reuse logic from views (refactor if needed, but import works for now)
-        _generate_schedule(shops)
+
+        # Call the logic from views. Note: _generate_schedule signature changed to (shops, schedule)
+        _generate_schedule(shops, schedule)
 
         # Publish
-        schedule = Schedule.objects.get(week_start_date=target_start)
         schedule.is_published = True
         schedule.save()
 
