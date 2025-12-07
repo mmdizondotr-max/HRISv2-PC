@@ -8,6 +8,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from .forms import PreferenceForm, ShiftAddForm
 import datetime
+import math
 
 @login_required
 def preferences(request):
@@ -106,6 +107,36 @@ def generator(request):
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
 
+    # Calculate Ideal Staff Count
+    total_main_slots = 0
+    total_res_slots = 0
+    for shop in shops:
+        try:
+            req_main = shop.requirement.required_main_staff
+            req_res = shop.requirement.required_reserve_staff
+        except ShopRequirement.DoesNotExist:
+            req_main = 1
+            req_res = 0
+        total_main_slots += req_main * 7
+        total_res_slots += req_res * 7
+
+    staff_needed_main = math.ceil(total_main_slots / 6)
+    # Total capacity provided by these staff (assuming 6 days work + 1 day off/reserve)
+    # Actually, they provide 6 Main slots and up to 1 Reserve slot (on their day off).
+    # Reserve capacity = staff_needed_main * 1
+    # Plus any surplus main capacity that can be used as reserve?
+    # Total Slots Provided = staff_needed_main * 7.
+    # Used for Main = total_main_slots.
+    # Remaining capacity = (staff_needed_main * 7) - total_main_slots.
+    reserve_capacity_available = (staff_needed_main * 7) - total_main_slots
+
+    reserve_deficit = max(0, total_res_slots - reserve_capacity_available)
+    # Extra staff needed purely for reserve?
+    # New staff provides 7 slots of availability (0 Main, 7 Reserve potentially).
+    extra_staff = math.ceil(reserve_deficit / 7)
+
+    ideal_staff_count = staff_needed_main + extra_staff
+
     # Nested Dict for Template: matrix[date][shop_id]
     matrix = {}
     for d in dates:
@@ -126,7 +157,8 @@ def generator(request):
         'dates': dates,
         'shops': shops,
         'matrix': matrix,
-        'change_logs': schedule.change_logs.all().order_by('-created_at')
+        'change_logs': schedule.change_logs.all().order_by('-created_at'),
+        'ideal_staff_count': ideal_staff_count
     })
 
 def _generate_schedule(shops, schedule):
@@ -139,9 +171,8 @@ def _generate_schedule(shops, schedule):
     schedule.shifts.all().delete()
 
     from accounts.models import User
-    # Note: We now filter inside the loop per shop based on applicability.
-    # But we still need priority scores.
-    # We can pre-calculate priorities for ALL active users.
+
+    # Pre-calculate priorities for ALL active users.
     all_users = User.objects.filter(is_active=True, is_approved=True)
 
     user_priority_map = {}
@@ -149,10 +180,24 @@ def _generate_schedule(shops, schedule):
         p, _ = UserPriority.objects.get_or_create(user=u)
         user_priority_map[u.id] = {'user': u, 'score': p.score}
 
+    # Helper to get candidates for a shop
+    def get_sorted_candidates(shop_obj, date_obj):
+        # Candidates are: Applicable + Active + Approved
+        cands = shop_obj.applicable_staff.filter(is_active=True, is_approved=True)
+        c_list = []
+        for c in cands:
+             if c.id in user_priority_map:
+                 c_list.append((c, user_priority_map[c.id]['score']))
+        # Sort desc by score
+        c_list.sort(key=lambda x: x[1], reverse=True)
+        return [x[0] for x in c_list]
+
     for i in range(7):
         current_date = schedule.week_start_date + datetime.timedelta(days=i)
         day_of_week = current_date.weekday()
 
+        # We need to track assigned counts for this day across phases
+        shop_status = {}
         for shop in shops:
             try:
                 req_main = shop.requirement.required_main_staff
@@ -160,44 +205,128 @@ def _generate_schedule(shops, schedule):
             except ShopRequirement.DoesNotExist:
                 req_main = 1
                 req_res = 0
+            shop_status[shop.id] = {
+                'shop': shop,
+                'req_main': req_main,
+                'req_res': req_res,
+                'assigned_main': 0,
+                'assigned_res': 0
+            }
 
-            # Filter candidates for this shop
-            # candidates = shop.applicable_staff.filter(is_active=True, is_approved=True)
-            # To avoid N+1, we can filter in python if list is small, or just query.
-            # Using query for safety.
-            candidates = shop.applicable_staff.filter(is_active=True, is_approved=True)
+        # --- Phase 1: Minimum Main Coverage (1 per shop) ---
+        # Round robin until all have 1 or we run out of people
+        shops_needing_min = [s_id for s_id, s in shop_status.items() if s['assigned_main'] < 1 and s['req_main'] > 0]
 
-            # Sort candidates by priority
-            # We need to grab score from our map or query it.
-            candidate_list = []
-            for c in candidates:
-                if c.id in user_priority_map:
-                    candidate_list.append((c, user_priority_map[c.id]['score']))
+        # We iterate in a loop until no more assignments can be made or all satisfied
+        while shops_needing_min:
+            made_assignment_this_round = False
+            for shop_id in list(shops_needing_min): # Copy list to modify
+                status = shop_status[shop_id]
+                shop = status['shop']
+
+                # Try to assign 1
+                candidates = get_sorted_candidates(shop, current_date)
+                assigned = False
+                for user in candidates:
+                    if _can_assign(user, current_date, day_of_week):
+                        Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='main')
+                        status['assigned_main'] += 1
+                        assigned = True
+                        break # Move to next shop
+
+                if assigned:
+                    made_assignment_this_round = True
+                    # Check if satisfied min (1)
+                    if status['assigned_main'] >= 1:
+                        shops_needing_min.remove(shop_id)
                 else:
-                    # Should not happen if all_users matches
-                    pass
+                    # Cannot fill this shop? Remove it to prevent infinite loop?
+                    # If we have candidates but they are all busy, then yes.
+                    shops_needing_min.remove(shop_id)
 
-            candidate_list.sort(key=lambda x: x[1], reverse=True)
+            if not made_assignment_this_round:
+                break # Stuck, exit phase
 
-            assigned_main = 0
-            for user, score in candidate_list:
-                if assigned_main >= req_main:
+        # --- Phase 2: Full Main Coverage ---
+        shops_needing_fill = [s_id for s_id, s in shop_status.items() if s['assigned_main'] < s['req_main']]
+
+        while shops_needing_fill:
+            made_assignment_this_round = False
+            for shop_id in list(shops_needing_fill):
+                status = shop_status[shop_id]
+                shop = status['shop']
+
+                candidates = get_sorted_candidates(shop, current_date)
+                assigned = False
+                for user in candidates:
+                    if _can_assign(user, current_date, day_of_week):
+                        Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='main')
+                        status['assigned_main'] += 1
+                        assigned = True
+                        break
+
+                if assigned:
+                    made_assignment_this_round = True
+                    if status['assigned_main'] >= status['req_main']:
+                        shops_needing_fill.remove(shop_id)
+                else:
+                    shops_needing_fill.remove(shop_id)
+
+            if not made_assignment_this_round:
+                break
+
+        # --- Phase 3: Reserve Coverage ---
+        # Prioritize shops with assigned_main == 1 (if they need reserve)
+        # Reserve candidates override "Preferred Day Off"
+
+        # Helper for reserve assignment
+        def assign_reserve_round_robin(target_shop_ids):
+            while target_shop_ids:
+                made_assignment_this_round = False
+                for shop_id in list(target_shop_ids):
+                    status = shop_status[shop_id]
+                    shop = status['shop']
+
+                    if status['assigned_res'] >= status['req_res']:
+                        target_shop_ids.remove(shop_id)
+                        continue
+
+                    candidates = get_sorted_candidates(shop, current_date)
+                    assigned = False
+                    for user in candidates:
+                        # Check _can_assign_reserve (ignores preference, ensures not working today)
+                        if _can_assign_reserve(user, current_date):
+                            Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='backup')
+                            status['assigned_res'] += 1
+                            assigned = True
+                            break
+
+                    if assigned:
+                        made_assignment_this_round = True
+                        if status['assigned_res'] >= status['req_res']:
+                            target_shop_ids.remove(shop_id)
+                    else:
+                        target_shop_ids.remove(shop_id)
+
+                if not made_assignment_this_round:
                     break
-                if _can_assign(user, current_date, day_of_week):
-                     Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='main')
-                     assigned_main += 1
 
-            assigned_res = 0
-            for user, score in candidate_list:
-                if assigned_res >= req_res:
-                    break
-                # Only check assignment again (user might have just been assigned main elsewhere? No, _can_assign checks that)
-                # Wait, if I just assigned them as Main in THIS shop, _can_assign will return False. Correct.
-                if _can_assign(user, current_date, day_of_week):
-                    Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='backup')
-                    assigned_res += 1
+        # Split shops
+        high_priority = []
+        normal_priority = []
+
+        for s_id, s in shop_status.items():
+            if s['req_res'] > 0 and s['assigned_res'] < s['req_res']:
+                if s['assigned_main'] <= 1:
+                    high_priority.append(s_id)
+                else:
+                    normal_priority.append(s_id)
+
+        assign_reserve_round_robin(high_priority)
+        assign_reserve_round_robin(normal_priority)
 
 def _can_assign(user, date, day_of_week):
+    # For MAIN assignment
     if Shift.objects.filter(user=user, date=date).exists():
         return False
     try:
@@ -205,6 +334,14 @@ def _can_assign(user, date, day_of_week):
             return False
     except:
         pass
+    return True
+
+def _can_assign_reserve(user, date):
+    # For RESERVE assignment
+    # 1. Must not be working today (Main or Backup)
+    if Shift.objects.filter(user=user, date=date).exists():
+        return False
+    # 2. Ignore Preferred Day Off (as per requirement)
     return True
 
 @login_required

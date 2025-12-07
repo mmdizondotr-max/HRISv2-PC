@@ -6,6 +6,13 @@
     <div class="col-12">
         <h2>Schedule Generation & Management</h2>
 
+        {% if ideal_staff_count %}
+            <div class="alert alert-info">
+                <strong>Ideal number of staff required: {{ ideal_staff_count }}</strong>
+                <small>(Estimated minimum to meet requirements with at least 1 day off per staff)</small>
+            </div>
+        {% endif %}
+
         <form method="post" class="mb-3">
             {% csrf_token %}
             {% if schedule.is_published %}
