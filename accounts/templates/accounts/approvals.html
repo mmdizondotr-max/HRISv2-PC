@@ -5,47 +5,100 @@
 {% block content %}
 <h2>Pending Approvals</h2>
 
-{% if pending_users %}
-    <div class="table-responsive">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Photo</th>
-                    <th>Name</th>
-                    <th>Username</th>
-                    <th>Tier</th>
-                    <th>Joined</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in pending_users %}
-                <tr>
-                    <td>
-                        {% if user.photo_id %}
-                            <img src="{{ user.photo_id.url }}" alt="ID" style="height: 50px; width: 50px; object-fit: cover;">
-                        {% else %}
-                            N/A
-                        {% endif %}
-                    </td>
-                    <td>{{ user.first_name }} {{ user.last_name }}</td>
-                    <td>{{ user.username }}</td>
-                    <td>{{ user.get_tier_display }}</td>
-                    <td>{{ user.date_joined|date:"M d, Y" }}</td>
-                    <td>
-                        <form method="post" class="d-inline">
-                            {% csrf_token %}
-                            <input type="hidden" name="user_id" value="{{ user.id }}">
-                            <button type="submit" name="action" value="approve" class="btn btn-success btn-sm">Approve</button>
-                            <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">Reject</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-{% else %}
-    <p>No pending approvals.</p>
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    {% endfor %}
 {% endif %}
+
+<div class="row">
+    <div class="col-md-12 mb-5">
+        <h4>User Registrations</h4>
+        {% if pending_users %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Photo</th>
+                            <th>Name</th>
+                            <th>Username</th>
+                            <th>Tier</th>
+                            <th>Joined</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in pending_users %}
+                        <tr>
+                            <td>
+                                {% if user.photo_id %}
+                                    <img src="{{ user.photo_id.url }}" alt="ID" style="height: 50px; width: 50px; object-fit: cover;">
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td>{{ user.first_name }} {{ user.last_name }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.get_tier_display }}</td>
+                            <td>{{ user.date_joined|date:"M d, Y" }}</td>
+                            <td>
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="user_id" value="{{ user.id }}">
+                                    <button type="submit" name="action" value="approve" class="btn btn-success btn-sm">Approve</button>
+                                    <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">Reject</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted">No pending user registrations.</p>
+        {% endif %}
+    </div>
+
+    <div class="col-md-12">
+        <h4>Password Reset Requests</h4>
+        {% if pending_resets %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>User Name</th>
+                            <th>Current Username</th>
+                            <th>Requested Username</th>
+                            <th>Requested At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for req in pending_resets %}
+                        <tr>
+                            <td>{{ req.user.first_name }} {{ req.user.last_name }}</td>
+                            <td>{{ req.user.username }}</td>
+                            <td>{{ req.new_username }}</td>
+                            <td>{{ req.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                                    <button type="submit" name="action" value="approve_reset" class="btn btn-warning btn-sm">Approve Reset</button>
+                                    <button type="submit" name="action" value="reject_reset" class="btn btn-secondary btn-sm">Reject</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted">No pending password reset requests.</p>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}
