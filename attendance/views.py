@@ -133,11 +133,49 @@ def shop_manage(request, shop_id=None):
 
         hours_formset = HoursFormSet(instance=shop)
 
+    # Prepare ordered forms for Mon-Sun (0-6)
+    # This logic matches forms to days for the template to render fixed rows
+    ordered_forms = []
+    days = range(7)
+    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    # Map existing forms by day
+    existing_map = {}
+    extra_forms = []
+
+    for f in hours_formset:
+        if f.instance.pk and f.instance.day is not None:
+             existing_map[f.instance.day] = f
+        else:
+             extra_forms.append(f)
+
+    extra_iter = iter(extra_forms)
+
+    for day_code in days:
+        if day_code in existing_map:
+            form_to_use = existing_map[day_code]
+        else:
+            # Grab next extra form
+            try:
+                form_to_use = next(extra_iter)
+                # Set the initial day for this form so it saves correctly
+                form_to_use.initial['day'] = day_code
+            except StopIteration:
+                # Should not happen if extra=7 and we don't have >7 forms
+                form_to_use = None
+
+        ordered_forms.append({
+            'day_name': day_names[day_code],
+            'day_code': day_code,
+            'form': form_to_use
+        })
+
     return render(request, 'attendance/shop_manage.html', {
         'form': form,
         'req_form': req_form,
         'hours_formset': hours_formset,
-        'shop': shop
+        'shop': shop,
+        'ordered_forms': ordered_forms,
     })
 
 @login_required

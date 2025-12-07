@@ -124,25 +124,20 @@ def account_promote(request, user_id):
     target_user = get_object_or_404(User, id=user_id)
 
     if request.method == 'POST':
-        form = UserPromotionForm(request.POST, instance=target_user)
+        # Check permissions strictly before binding form or saving
+        if not request.user.is_superuser:
+            if request.user.tier == 'administrator':
+                # Administrators cannot demote (or change) another Administrator
+                if target_user.tier == 'administrator':
+                     messages.error(request, "Administrators cannot modify other Administrators.")
+                     return redirect('accounts:account_list')
+
+        form = UserPromotionForm(request.POST, instance=target_user, current_user=request.user)
         if form.is_valid():
-            # Check if attempting to promote to or beyond own tier?
-            new_tier = form.cleaned_data.get('tier')
-
-            if request.user.tier == 'supervisor':
-                if new_tier != 'regular': # Can't promote to Supervisor or Admin
-                     messages.error(request, "Supervisors cannot promote users to Supervisor or Administrator.")
-                     return redirect('accounts:account_list')
-
-                # Check if target is already higher or equal?
-                if target_user.tier in ['supervisor', 'administrator']:
-                     messages.error(request, "You cannot modify this user.")
-                     return redirect('accounts:account_list')
-
             form.save()
             messages.success(request, f"User {target_user.username} updated.")
             return redirect('accounts:account_list')
     else:
-        form = UserPromotionForm(instance=target_user)
+        form = UserPromotionForm(instance=target_user, current_user=request.user)
 
     return render(request, 'accounts/account_promote.html', {'form': form, 'target_user': target_user})

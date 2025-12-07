@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-md-10">
         <div class="card">
             <div class="card-header">
                 <h3>{% if shop.id %}Edit Shop: {{ shop.name }}{% else %}Add New Shop{% endif %}</h3>
@@ -42,26 +42,53 @@
 
                     <h4>Operating Hours</h4>
                     {{ hours_formset.management_form }}
-                    <table class="table table-sm">
+                    <table class="table table-sm align-middle">
                         <thead>
                             <tr>
-                                <th>Day</th>
-                                <th>Open Time</th>
-                                <th>Close Time</th>
-                                <th>Delete</th>
+                                <th style="width: 15%">Day</th>
+                                <th style="width: 25%">Open Time</th>
+                                <th style="width: 25%">Close Time</th>
+                                <th style="width: 35%">Options</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for form in hours_formset %}
-                                <tr>
+                            {% for item in ordered_forms %}
+                                {% with form=item.form day_name=item.day_name day_code=item.day_code %}
+                                <tr class="day-row" data-day="{{ day_code }}">
                                     <td>
+                                        <strong>{{ day_name }}</strong>
                                         {{ form.id }}
                                         {{ form.shop }}
-                                        {{ form.day }}
+                                        {# Set day field manually, hide it #}
+                                        <input type="hidden" name="{{ form.prefix }}-day" value="{{ day_code }}">
                                     </td>
-                                    <td>{{ form.open_time }}</td>
-                                    <td>{{ form.close_time }}</td>
-                                    <td>{{ form.DELETE }}</td>
+                                    <td>
+                                        {{ form.open_time }}
+                                    </td>
+                                    <td>
+                                        {{ form.close_time }}
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column">
+                                            <div class="form-check">
+                                                {# Custom Checkbox for Closed #}
+                                                <input class="form-check-input closed-checkbox" type="checkbox" id="closed_{{ day_code }}" data-day="{{ day_code }}">
+                                                <label class="form-check-label" for="closed_{{ day_code }}">Closed</label>
+                                            </div>
+
+                                            {% if day_code > 0 %}
+                                            <div class="form-check mt-1">
+                                                <input class="form-check-input similar-checkbox" type="checkbox" id="similar_{{ day_code }}" data-day="{{ day_code }}">
+                                                <label class="form-check-label" for="similar_{{ day_code }}">Similar to previous day</label>
+                                            </div>
+                                            {% endif %}
+
+                                            {# Hidden Delete Checkbox for Django Formset #}
+                                            <div class="d-none">
+                                                {{ form.DELETE }}
+                                            </div>
+                                        </div>
+                                    </td>
                                 </tr>
                                 {% if form.errors %}
                                 <tr>
@@ -70,6 +97,7 @@
                                     </td>
                                 </tr>
                                 {% endif %}
+                                {% endwith %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -83,4 +111,128 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.day-row');
+
+    rows.forEach(row => {
+        const dayCode = parseInt(row.getAttribute('data-day'));
+        const closedCheck = row.querySelector('.closed-checkbox');
+        const similarCheck = row.querySelector('.similar-checkbox');
+        const openInput = row.querySelector('input[name$="-open_time"]');
+        const closeInput = row.querySelector('input[name$="-close_time"]');
+        const deleteCheck = row.querySelector('input[name$="-DELETE"]');
+
+        // Initial State for "Closed"
+        // If it's an existing record (has ID) but we want to know if it is effectively closed?
+        // Actually, if it's rendered, it exists or is extra.
+        // If deleteCheck is checked, it means it's marked for deletion (closed).
+        // But for extra forms, deleteCheck isn't usually checked.
+        // We rely on openInput value. If empty, maybe assume closed?
+        // Or better, just let user decide.
+        // BUT, if it's an existing record, we should check if deleteCheck is checked.
+        if (deleteCheck && deleteCheck.checked) {
+            closedCheck.checked = true;
+            toggleClosed(dayCode, true);
+        } else if (!openInput.value && !closeInput.value && !row.querySelector('input[name$="-id"]').value) {
+            // New row, empty values -> default to Closed?
+            // Maybe not, let's leave it unchecked unless user checks it.
+            // Or if user wants default closed for everything? No.
+        }
+
+        // Event Listeners
+        if (closedCheck) {
+            closedCheck.addEventListener('change', function() {
+                toggleClosed(dayCode, this.checked);
+                // If closing, uncheck "Similar" to avoid conflicts?
+                if (this.checked && similarCheck) {
+                    similarCheck.checked = false;
+                    // trigger change to re-enable inputs temporarily so they can be cleared?
+                    // toggleSimilar handles logic.
+                }
+            });
+        }
+
+        if (similarCheck) {
+            similarCheck.addEventListener('change', function() {
+                toggleSimilar(dayCode, this.checked);
+                // If making similar, uncheck Closed
+                if (this.checked && closedCheck) {
+                    closedCheck.checked = false;
+                    toggleClosed(dayCode, false); // Enable inputs
+                    toggleSimilar(dayCode, true); // Then apply similarity
+                }
+            });
+        }
+    });
+
+    function toggleClosed(dayCode, isClosed) {
+        const row = document.querySelector(`.day-row[data-day="${dayCode}"]`);
+        const openInput = row.querySelector('input[name$="-open_time"]');
+        const closeInput = row.querySelector('input[name$="-close_time"]');
+        const deleteCheck = row.querySelector('input[name$="-DELETE"]');
+
+        if (isClosed) {
+            openInput.value = '';
+            closeInput.value = '';
+            openInput.disabled = true;
+            closeInput.disabled = true;
+            if (deleteCheck) deleteCheck.checked = true;
+        } else {
+            openInput.disabled = false;
+            closeInput.disabled = false;
+            if (deleteCheck) deleteCheck.checked = false;
+        }
+    }
+
+    function toggleSimilar(dayCode, isSimilar) {
+        if (dayCode === 0) return; // Monday has no previous
+
+        const row = document.querySelector(`.day-row[data-day="${dayCode}"]`);
+        const prevRow = document.querySelector(`.day-row[data-day="${dayCode - 1}"]`);
+
+        const openInput = row.querySelector('input[name$="-open_time"]');
+        const closeInput = row.querySelector('input[name$="-close_time"]');
+
+        const prevOpen = prevRow.querySelector('input[name$="-open_time"]');
+        const prevClose = prevRow.querySelector('input[name$="-close_time"]');
+
+        if (isSimilar) {
+            openInput.value = prevOpen.value;
+            closeInput.value = prevClose.value;
+            openInput.readOnly = true;
+            closeInput.readOnly = true;
+            // Note: Use readOnly instead of disabled for Similar so values are still submitted!
+            // Wait, for "Closed" we disable so they are NOT submitted (or ignored)?
+            // If disabled, they are not posted.
+            // If we want to save the "Similar" values, they must be posted. So readOnly.
+
+            // Add listeners to previous row to update this one dynamically?
+            // "Add a checkbox... to make inputting efficient and quicker."
+            // Usually implies a one-time copy or dynamic binding.
+            // Let's implement dynamic binding.
+            prevOpen.addEventListener('input', updateSimilar);
+            prevClose.addEventListener('input', updateSimilar);
+
+            // Define cleanup when untoggling?
+        } else {
+            openInput.readOnly = false;
+            closeInput.readOnly = false;
+            prevOpen.removeEventListener('input', updateSimilar);
+            prevClose.removeEventListener('input', updateSimilar);
+        }
+
+        function updateSimilar() {
+            // Re-check if still similar (closure issue? no, function defined inside toggleSimilar scope?)
+            // Better to define outside or attach cleanly.
+            // Simplest: Just copy current values.
+            if (row.querySelector('.similar-checkbox').checked) {
+                 openInput.value = prevOpen.value;
+                 closeInput.value = prevClose.value;
+            }
+        }
+    }
+});
+</script>
 {% endblock %}
