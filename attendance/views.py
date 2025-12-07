@@ -111,9 +111,8 @@ def shop_manage(request, shop_id=None):
         if form.is_valid():
             created_shop = form.save()
 
-            # Handle Requirement manually or via logic?
-            # Ideally one-to-one should be handled carefully.
-            req_instance = getattr(created_shop, 'requirement', ShopRequirement(shop=created_shop))
+            # Retrieve existing requirement reliably or create new
+            req_instance, _ = ShopRequirement.objects.get_or_create(shop=created_shop)
             req_form = ShopRequirementForm(request.POST, instance=req_instance)
 
             hours_formset = HoursFormSet(request.POST, instance=created_shop)
