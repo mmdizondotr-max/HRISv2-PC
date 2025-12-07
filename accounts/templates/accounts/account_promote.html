@@ -4,8 +4,9 @@
 <div class="row justify-content-center">
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h3>Edit User: {{ target_user.get_full_name }}</h3>
+                <a href="{% url 'attendance:dtr_view_user' target_user.id %}" class="btn btn-outline-info btn-sm">View Daily Time Record</a>
             </div>
             <div class="card-body">
                 <form method="post">
@@ -13,7 +14,17 @@
                     {% for field in form %}
                         <div class="mb-3">
                             <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
-                            {{ field }}
+                            {% if field.name == 'suspend_user' %}
+                                <div class="form-check">
+                                    {{ field }}
+                                    <label class="form-check-label text-danger" for="{{ field.id_for_label }}">
+                                        Suspend/Terminate User (Removes assignments & blocks login)
+                                    </label>
+                                </div>
+                            {% else %}
+                                {{ field }}
+                            {% endif %}
+
                             {% if field.errors %}
                                 <div class="invalid-feedback d-block">
                                     {{ field.errors }}
@@ -26,6 +37,38 @@
                         <a href="{% url 'accounts:account_list' %}" class="btn btn-secondary">Cancel</a>
                     </div>
                 </form>
+
+                {% if request.user.tier == 'administrator' or request.user.is_superuser %}
+                <hr>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                        Delete Account
+                    </button>
+                </div>
+
+                <!-- Delete Modal -->
+                <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title" id="deleteModalLabel">Confirm Deletion</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body">
+                        Are you sure you want to delete <strong>{{ target_user.username }}</strong>? This will permanently remove all data associated with this user from the system. This action cannot be undone.
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <button type="submit" class="btn btn-danger">Yes, Delete Permanently</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
