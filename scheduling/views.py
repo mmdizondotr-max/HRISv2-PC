@@ -2,11 +2,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponseForbidden
-from .models import Preference, Schedule, Shift, UserPriority, ShopRequirement
+from .models import Preference, Schedule, Shift, UserPriority, ShopRequirement, ScheduleChangeLog
 from attendance.models import Shop
 from django.db.models import Count, Q
 from django.utils import timezone
-from .forms import PreferenceForm
+from .forms import PreferenceForm, ShiftAddForm
 import datetime
 
 @login_required
@@ -32,184 +32,214 @@ def preferences(request):
 @login_required
 def my_schedule(request):
     today = timezone.localdate()
-    # Logic to find current week's schedule
-    # Assuming weeks start on Sunday.
-    # We can fetch upcoming shifts.
-    shifts = Shift.objects.filter(user=request.user, date__gte=today).order_by('date')
-    return render(request, 'scheduling/my_schedule.html', {'shifts': shifts})
+
+    # 1. Schedule starting this coming Sunday (if published)
+    # 2. Schedule starting last Sunday (current week)
+
+    start_of_current_week = today - datetime.timedelta(days=(today.weekday() + 1) % 7)
+    start_of_next_week = start_of_current_week + datetime.timedelta(days=7)
+
+    schedule = Schedule.objects.filter(week_start_date=start_of_next_week, is_published=True).first()
+
+    if not schedule:
+        schedule = Schedule.objects.filter(week_start_date=start_of_current_week, is_published=True).first()
+
+    if not schedule:
+        return render(request, 'scheduling/my_schedule.html', {'schedule': None})
+
+    dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
+    shops = Shop.objects.filter(is_active=True)
+
+    # Nested Dict for Template: matrix[date][shop_id]
+    matrix = {}
+    for d in dates:
+        matrix[d] = {}
+        for s in shops:
+            matrix[d][s.id] = {'main': [], 'backup': []}
+
+    shifts = schedule.shifts.all().select_related('user', 'shop')
+    for shift in shifts:
+        # Note: shift.date is Date, matrix keys are Dates. Should match if types are consistent.
+        if shift.date in matrix and shift.shop.id in matrix[shift.date]:
+             if shift.role == 'main':
+                 matrix[shift.date][shift.shop.id]['main'].append(shift.user)
+             else:
+                 matrix[shift.date][shift.shop.id]['backup'].append(shift.user)
+
+    return render(request, 'scheduling/my_schedule.html', {
+        'schedule': schedule,
+        'dates': dates,
+        'shops': shops,
+        'matrix': matrix,
+        'change_logs': schedule.change_logs.all().order_by('-created_at')
+    })
 
 @login_required
 def generator(request):
     if request.user.tier not in ['supervisor', 'administrator']:
         return HttpResponseForbidden()
 
-    # "A Supervisor can only generate starting on Saturdays of every week"
-    # Logic: Check if today is Saturday.
     today = timezone.localdate()
-    # Weekday: Monday is 0, Sunday is 6. Saturday is 5.
-    is_saturday = (today.weekday() == 5)
 
-    if not is_saturday and not request.user.tier == 'administrator':
-        # Admins might want to debug, but strict rule says "A Supervisor can only..."
-        # Let's enforce it loosely for now or show warning.
-        pass
+    # Target Next Week (Sunday)
+    days_until_sunday = (6 - today.weekday()) % 7
+    if days_until_sunday == 0:
+        target_start = today + datetime.timedelta(days=7)
+    else:
+        target_start = today + datetime.timedelta(days=days_until_sunday)
+        if today.weekday() == 6:
+             target_start = today
 
-    shops = request.user.supervised_shops.all()
-    if request.user.tier == 'administrator':
-        shops = Shop.objects.all()
+    schedule, _ = Schedule.objects.get_or_create(week_start_date=target_start)
+    shops = Shop.objects.filter(is_active=True)
 
     if request.method == 'POST':
         if 'generate' in request.POST:
-            # Trigger generation logic
-            _generate_schedule(shops)
-            messages.success(request, "Schedule generated/previewed.")
+            _generate_schedule(shops, schedule)
+            messages.success(request, "Schedule generated.")
+            return redirect('scheduling:generator')
         elif 'publish' in request.POST:
-             _publish_schedule()
-             messages.success(request, "Schedule published.")
+            schedule.is_published = True
+            schedule.save()
+            messages.success(request, "Schedule published.")
+            return redirect('scheduling:generator')
 
-    # Fetch generated shifts for preview (next week)
-    # Next Sunday
-    days_ahead = 6 - today.weekday()
-    if days_ahead <= 0: # Today is Sun (0) or Sat (-1 if 6->5? wait weekday is 0-6).
-        # If today is Sat (5), next Sun is +1 day.
-        pass
+    dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
 
-    next_sunday = today + datetime.timedelta(days=(6 - today.weekday() + 1) if today.weekday() != 6 else 7)
-    # Actually if today is Sat (5), target week starts tomorrow (Sun).
-    if today.weekday() == 5:
-        target_start = today + datetime.timedelta(days=1)
-    else:
-        # Just find the next Sunday?
-        # Let's assume we are generating for the week STARTING the upcoming Sunday.
-        target_start = today + datetime.timedelta(days=(6 - today.weekday()))
+    # Nested Dict for Template: matrix[date][shop_id]
+    matrix = {}
+    for d in dates:
+        matrix[d] = {}
+        for s in shops:
+            matrix[d][s.id] = {'main': [], 'backup': []}
 
-    try:
-        schedule = Schedule.objects.get(week_start_date=target_start)
-        preview_shifts = schedule.shifts.all().order_by('date', 'shop')
-    except Schedule.DoesNotExist:
-        schedule = None
-        preview_shifts = []
+    shifts = schedule.shifts.all().select_related('user', 'shop')
+    for shift in shifts:
+        if shift.date in matrix and shift.shop.id in matrix[shift.date]:
+             if shift.role == 'main':
+                 matrix[shift.date][shift.shop.id]['main'].append(shift)
+             else:
+                 matrix[shift.date][shift.shop.id]['backup'].append(shift)
 
     return render(request, 'scheduling/generator.html', {
-        'shops': shops,
-        'preview_shifts': preview_shifts,
         'schedule': schedule,
-        'is_saturday': is_saturday
+        'dates': dates,
+        'shops': shops,
+        'matrix': matrix,
+        'change_logs': schedule.change_logs.all().order_by('-created_at')
     })
 
-def _generate_schedule(shops):
-    # This is the core heuristic algorithm
-    # 1. Determine target week (Next Sunday)
-    today = timezone.localdate()
-    target_start = today + datetime.timedelta(days=(6 - today.weekday()))
+def _generate_schedule(shops, schedule):
+    if schedule.is_published:
+        ScheduleChangeLog.objects.create(
+            schedule=schedule,
+            message="Schedule was completely regenerated."
+        )
 
-    # Create or Get Schedule
-    schedule, created = Schedule.objects.get_or_create(week_start_date=target_start)
-
-    # If already published, mark as "regenerated" (requirement 3.4.8), essentially just re-doing it.
-    # Requirement: "Once a schedule is published, all regenerations... will be marked up."
-    # For now, let's just wipe existing DRAFT shifts to allow regeneration.
-    if not schedule.is_published:
-        schedule.shifts.all().delete()
-    else:
-        # If published, we might need a versioning system or just overwrite and log it.
-        # Simplification: Overwrite.
-        schedule.shifts.all().delete()
-
-    # 2. Get All Eligible Users (Regulars + Supervisors who supervise)
-    # Actually supervisors choose "applicable Regulars".
-    # For simplicity, let's assume all approved users are available pool,
-    # or strictly those assigned to the shop?
-    # Requirement 3.4.4: "Supervisors will then choose applicable Regulars... for each shop"
-    # This implies a pre-step of "Staffing Pool Assignment".
-    # I'll skip the UI for pool assignment and assume ALL Active Users are the pool for now to save complexity,
-    # or better: Use `Shop.supervisors` and maybe add `Shop.staff` M2M.
-    # Let's assume ALL users for now.
+    schedule.shifts.all().delete()
 
     from accounts.models import User
     users = User.objects.filter(is_active=True, is_approved=True)
 
-    # 3. Calculate/Fetch Priorities
-    # Score = Base(100) - (Granted Prefs) ...
-    # Let's just use the stored UserPriority.
     user_priorities = []
     for u in users:
         p, _ = UserPriority.objects.get_or_create(user=u)
-        # Reset score slightly or decay? "automatically rotating priority"
-        # Let's add a small decay or boost every week?
-        # Or just rely on the subtraction of granted prefs.
         user_priorities.append((u, p.score))
 
-    # Sort by score descending (Higher score = Higher priority)
     user_priorities.sort(key=lambda x: x[1], reverse=True)
 
-    # 4. Assign Shifts Day by Day (Sun to Sat)
     for i in range(7):
-        current_date = target_start + datetime.timedelta(days=i)
-        day_of_week = current_date.weekday() # 0=Mon, 6=Sun
+        current_date = schedule.week_start_date + datetime.timedelta(days=i)
+        day_of_week = current_date.weekday()
 
         for shop in shops:
-            # Get requirement
             try:
-                req = shop.requirement.min_staff
-            except:
-                req = 1
+                req_main = shop.requirement.required_main_staff
+                req_res = shop.requirement.required_reserve_staff
+            except ShopRequirement.DoesNotExist:
+                req_main = 1
+                req_res = 0
 
-            assigned_count = 0
-
-            # Try to assign top priority users who:
-            # a) Have not preferred this day off OR (have preferred but low priority?)
-            # b) Are not assigned elsewhere today.
-            # c) Have not exceeded working days? (Requirement 3.2.1: # of days off preferred)
-
+            assigned_main = 0
             for user, score in user_priorities:
-                if assigned_count >= req:
+                if assigned_main >= req_main:
                     break
+                if _can_assign(user, current_date, day_of_week):
+                     Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='main')
+                     assigned_main += 1
 
-                # Check if already assigned today
-                if Shift.objects.filter(user=user, date=current_date).exists():
-                    continue
+            assigned_res = 0
+            for user, score in user_priorities:
+                if assigned_res >= req_res:
+                    break
+                if _can_assign(user, current_date, day_of_week):
+                    Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='backup')
+                    assigned_res += 1
 
-                # Check Preferences
-                try:
-                    pref = user.preference
-                    # Preferred Day Off Check
-                    # If this day is their preferred day off (e.g. Sunday)
-                    # And they have enough "budget" for days off?
-                    # This is complex.
-                    # Simplified Heuristic:
-                    # If Day matches Top Preferred Day, try to SKIP them (grant off).
-                    if pref.top_preferred_day_off == day_of_week:
-                        # Grant off if we can afford it (prioritize high score users getting off)
-                        # But wait, high score means they deserve their preference.
-                        # So if Score is High, we SKIP them.
-                        # If we run out of staff, we might have to force them in (and boost their score later).
-                        continue
+def _can_assign(user, date, day_of_week):
+    if Shift.objects.filter(user=user, date=date).exists():
+        return False
+    try:
+        if user.preference.top_preferred_day_off == day_of_week:
+            return False
+    except:
+        pass
+    return True
 
-                except Preference.DoesNotExist:
-                    pass
+@login_required
+def shift_delete(request, shift_id):
+    if request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden()
 
-                # Assign
+    shift = get_object_or_404(Shift, id=shift_id)
+    schedule = shift.schedule
+
+    # Log Change
+    ScheduleChangeLog.objects.create(
+        schedule=schedule,
+        user=request.user,
+        message=f"Removed {shift.user} from {shift.shop} on {shift.date} ({shift.get_role_display()})"
+    )
+
+    shift.delete()
+    messages.success(request, "Shift removed.")
+    return redirect('scheduling:generator')
+
+@login_required
+def shift_add(request, schedule_id, date, shop_id, role):
+    if request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden()
+
+    schedule = get_object_or_404(Schedule, id=schedule_id)
+    shop = get_object_or_404(Shop, id=shop_id)
+    target_date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+
+    if request.method == 'POST':
+        form = ShiftAddForm(request.POST)
+        if form.is_valid():
+            user = form.cleaned_data['user']
+
+            # Basic validation
+            if Shift.objects.filter(user=user, date=target_date).exists():
+                messages.error(request, f"{user} is already assigned on {target_date}")
+            else:
                 Shift.objects.create(
                     schedule=schedule,
                     user=user,
                     shop=shop,
-                    date=current_date,
-                    role='main'
+                    date=target_date,
+                    role=role
                 )
-                assigned_count += 1
+                ScheduleChangeLog.objects.create(
+                    schedule=schedule,
+                    user=request.user,
+                    message=f"Added {user} to {shop} on {target_date} ({role})"
+                )
+                messages.success(request, "Shift added.")
+                return redirect('scheduling:generator')
+    else:
+        form = ShiftAddForm()
 
-                # Reduce Score for getting a shift? No, reduce score for getting PREFERENCE.
-                # If they wanted to work, giving them work is good?
-                # Usually "Fairness" in scheduling means "fair distribution of bad shifts" or "fair distribution of desired days off".
-                # Requirement: "lowering the score of employees whose preferences are successfully granted"
-                # So if they wanted OFF today, and we gave them OFF (by not assigning), we lower score.
-
-            # If we couldn't meet req, we might need to pull from those we skipped.
-            # (Skipped for simplicity in this MVP)
-
-    # 5. Backup Assignment (Similar logic)
-
-def _publish_schedule():
-    # Find draft schedule
-    pass
+    return render(request, 'scheduling/shift_add.html', {
+        'form': form, 'date': target_date, 'shop': shop, 'role': role
+    })

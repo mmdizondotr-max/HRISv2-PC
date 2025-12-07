@@ -6,11 +6,28 @@ class Shop(models.Model):
     name = models.CharField(max_length=100)
     supervisors = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='supervised_shops')
     is_active = models.BooleanField(default=True)
-    # Opening/Closing times could be useful for validation, though requirements didn't explicitly demand strict enforcement logic yet.
-    # We can add them as fields to display or validate against.
 
     def __str__(self):
         return self.name
+
+class ShopOperatingHours(models.Model):
+    DAY_CHOICES = [
+        (0, 'Monday'),
+        (1, 'Tuesday'),
+        (2, 'Wednesday'),
+        (3, 'Thursday'),
+        (4, 'Friday'),
+        (5, 'Saturday'),
+        (6, 'Sunday'),
+    ]
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='operating_hours')
+    day = models.IntegerField(choices=DAY_CHOICES)
+    open_time = models.TimeField()
+    close_time = models.TimeField()
+
+    class Meta:
+        unique_together = ('shop', 'day')
+        ordering = ['day']
 
 class TimeLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='time_logs')

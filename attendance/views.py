@@ -1,8 +1,12 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
-from .models import Shop, TimeLog
+from .models import Shop, TimeLog, ShopOperatingHours
+from scheduling.models import ShopRequirement
+from .forms import ShopForm, ShopRequirementForm, ShopOperatingHoursForm
+from django.forms import inlineformset_factory
+from django.http import HttpResponseForbidden
 import ntplib
 from time import ctime
 import datetime
@@ -76,3 +80,75 @@ def home(request):
         'shops': shops,
         'todays_log': todays_log,
     })
+
+@login_required
+def shop_list(request):
+    if request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden("Unauthorized")
+
+    shops = Shop.objects.all()
+    return render(request, 'attendance/shop_list.html', {'shops': shops})
+
+@login_required
+def shop_manage(request, shop_id=None):
+    if request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden("Unauthorized")
+
+    if shop_id:
+        shop = get_object_or_404(Shop, id=shop_id)
+        # Ensure requirement exists
+        if not hasattr(shop, 'requirement'):
+            ShopRequirement.objects.create(shop=shop)
+    else:
+        shop = Shop()
+
+    # Formsets
+    HoursFormSet = inlineformset_factory(Shop, ShopOperatingHours, form=ShopOperatingHoursForm, extra=7, max_num=7, can_delete=True)
+
+    if request.method == 'POST':
+        form = ShopForm(request.POST, instance=shop)
+
+        if form.is_valid():
+            created_shop = form.save()
+
+            # Handle Requirement manually or via logic?
+            # Ideally one-to-one should be handled carefully.
+            req_instance = getattr(created_shop, 'requirement', ShopRequirement(shop=created_shop))
+            req_form = ShopRequirementForm(request.POST, instance=req_instance)
+
+            hours_formset = HoursFormSet(request.POST, instance=created_shop)
+
+            if req_form.is_valid() and hours_formset.is_valid():
+                req_form.save()
+                hours_formset.save()
+                messages.success(request, "Shop saved successfully.")
+                return redirect('attendance:shop_list')
+    else:
+        form = ShopForm(instance=shop)
+        if shop_id:
+            req_instance = shop.requirement
+            req_form = ShopRequirementForm(instance=req_instance)
+        else:
+            req_form = ShopRequirementForm()
+
+        hours_formset = HoursFormSet(instance=shop)
+
+    return render(request, 'attendance/shop_manage.html', {
+        'form': form,
+        'req_form': req_form,
+        'hours_formset': hours_formset,
+        'shop': shop
+    })
+
+@login_required
+def shop_delete(request, shop_id):
+    if request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden("Unauthorized")
+
+    shop = get_object_or_404(Shop, id=shop_id)
+    if request.method == 'POST':
+        shop.delete()
+        messages.success(request, "Shop deleted.")
+        return redirect('attendance:shop_list')
+
+    return render(request, 'attendance/shop_delete.html', {'shop': shop})

@@ -50,3 +50,11 @@ class AccountSettingsForm(forms.ModelForm):
         if not nickname:
             return None
         return nickname
+
+class UserPromotionForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ['tier']
+        widgets = {
+            'tier': forms.Select(attrs={'class': 'form-select'}),
+        }
