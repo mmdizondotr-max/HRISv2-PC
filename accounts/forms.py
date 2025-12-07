@@ -62,9 +62,16 @@ class UserPromotionForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.current_user = kwargs.pop('current_user', None)
         super().__init__(*args, **kwargs)
         self.fields['applicable_shops'].queryset = Shop.objects.filter(is_active=True)
         self.fields['applicable_shops'].label = "Assignable Shops"
+
+        if self.current_user and not self.current_user.is_superuser:
+            if self.current_user.tier == 'supervisor':
+                # Supervisors cannot change tiers
+                if 'tier' in self.fields:
+                    del self.fields['tier']
 
 class ForgotPasswordForm(forms.Form):
     first_name = forms.CharField(
