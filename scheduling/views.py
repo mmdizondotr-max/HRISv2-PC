@@ -139,14 +139,15 @@ def _generate_schedule(shops, schedule):
     schedule.shifts.all().delete()
 
     from accounts.models import User
-    users = User.objects.filter(is_active=True, is_approved=True)
+    # Note: We now filter inside the loop per shop based on applicability.
+    # But we still need priority scores.
+    # We can pre-calculate priorities for ALL active users.
+    all_users = User.objects.filter(is_active=True, is_approved=True)
 
-    user_priorities = []
-    for u in users:
+    user_priority_map = {}
+    for u in all_users:
         p, _ = UserPriority.objects.get_or_create(user=u)
-        user_priorities.append((u, p.score))
-
-    user_priorities.sort(key=lambda x: x[1], reverse=True)
+        user_priority_map[u.id] = {'user': u, 'score': p.score}
 
     for i in range(7):
         current_date = schedule.week_start_date + datetime.timedelta(days=i)
@@ -160,8 +161,26 @@ def _generate_schedule(shops, schedule):
                 req_main = 1
                 req_res = 0
 
+            # Filter candidates for this shop
+            # candidates = shop.applicable_staff.filter(is_active=True, is_approved=True)
+            # To avoid N+1, we can filter in python if list is small, or just query.
+            # Using query for safety.
+            candidates = shop.applicable_staff.filter(is_active=True, is_approved=True)
+
+            # Sort candidates by priority
+            # We need to grab score from our map or query it.
+            candidate_list = []
+            for c in candidates:
+                if c.id in user_priority_map:
+                    candidate_list.append((c, user_priority_map[c.id]['score']))
+                else:
+                    # Should not happen if all_users matches
+                    pass
+
+            candidate_list.sort(key=lambda x: x[1], reverse=True)
+
             assigned_main = 0
-            for user, score in user_priorities:
+            for user, score in candidate_list:
                 if assigned_main >= req_main:
                     break
                 if _can_assign(user, current_date, day_of_week):
@@ -169,9 +188,11 @@ def _generate_schedule(shops, schedule):
                      assigned_main += 1
 
             assigned_res = 0
-            for user, score in user_priorities:
+            for user, score in candidate_list:
                 if assigned_res >= req_res:
                     break
+                # Only check assignment again (user might have just been assigned main elsewhere? No, _can_assign checks that)
+                # Wait, if I just assigned them as Main in THIS shop, _can_assign will return False. Correct.
                 if _can_assign(user, current_date, day_of_week):
                     Shift.objects.create(schedule=schedule, user=user, shop=shop, date=current_date, role='backup')
                     assigned_res += 1
@@ -218,6 +239,12 @@ def shift_add(request, schedule_id, date, shop_id, role):
         form = ShiftAddForm(request.POST)
         if form.is_valid():
             user = form.cleaned_data['user']
+
+            # Check if user is applicable for this shop?
+            # Requirement: "In the actions that can be done in the account list... assign each account to each applicable shop... when generating the schedule, only staff applicable... will be included"
+            # It doesn't explicitly forbid manual override. But usually consistency is good.
+            # I will not strictly forbid it here to allow emergency overrides, as manual add is an override mechanism.
+            # The "auto generator" must strictly follow it.
 
             # Basic validation
             if Shift.objects.filter(user=user, date=target_date).exists():

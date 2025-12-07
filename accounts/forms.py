@@ -1,5 +1,6 @@
 from django import forms
 from .models import User
+from attendance.models import Shop
 
 class UserRegistrationForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
@@ -54,7 +55,55 @@ class AccountSettingsForm(forms.ModelForm):
 class UserPromotionForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ['tier']
+        fields = ['tier', 'applicable_shops']
         widgets = {
             'tier': forms.Select(attrs={'class': 'form-select'}),
+            'applicable_shops': forms.CheckboxSelectMultiple(),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['applicable_shops'].queryset = Shop.objects.filter(is_active=True)
+        self.fields['applicable_shops'].label = "Assignable Shops"
+
+class ForgotPasswordForm(forms.Form):
+    first_name = forms.CharField(
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'First Name'})
+    )
+    last_name = forms.CharField(
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Last Name'})
+    )
+    new_username = forms.CharField(
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'New Username'})
+    )
+    new_password = forms.CharField(
+        widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'New Password'})
+    )
+    confirm_password = forms.CharField(
+        widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Confirm New Password'})
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        pwd = cleaned_data.get('new_password')
+        cpwd = cleaned_data.get('confirm_password')
+
+        if pwd and cpwd and pwd != cpwd:
+            raise forms.ValidationError("Passwords do not match.")
+
+        first_name = cleaned_data.get('first_name')
+        last_name = cleaned_data.get('last_name')
+        new_username = cleaned_data.get('new_username')
+
+        # Verify user exists
+        try:
+            user = User.objects.get(first_name__iexact=first_name, last_name__iexact=last_name)
+            cleaned_data['user_cache'] = user
+        except User.DoesNotExist:
+            raise forms.ValidationError("No account found with that First and Last name.")
+
+        # Check username uniqueness, excluding the current user if they kept the same username
+        if User.objects.exclude(pk=user.pk).filter(username__iexact=new_username).exists():
+            raise forms.ValidationError("This username is already taken by another user.")
+
+        return cleaned_data
