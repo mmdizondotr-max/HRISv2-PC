@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
@@ -189,3 +190,48 @@ def shop_delete(request, shop_id):
         return redirect('attendance:shop_list')
 
     return render(request, 'attendance/shop_delete.html', {'shop': shop})
+
+@login_required
+def daily_time_record(request, user_id=None):
+    User = get_user_model()
+
+    if user_id:
+        if request.user.tier not in ['supervisor', 'administrator']:
+            return HttpResponseForbidden("Unauthorized to view other users' DTR.")
+        target_user = get_object_or_404(User, id=user_id)
+    else:
+        target_user = request.user
+
+    # Date Filtering
+    today = timezone.localdate()
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+
+    if start_date_str:
+        try:
+            start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today.replace(day=1)
+    else:
+        # Default to first day of current month
+        start_date = today.replace(day=1)
+
+    if end_date_str:
+        try:
+            end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            end_date = today
+    else:
+        end_date = today
+
+    logs = TimeLog.objects.filter(
+        user=target_user,
+        date__range=[start_date, end_date]
+    ).order_by('-date')
+
+    return render(request, 'attendance/dtr.html', {
+        'target_user': target_user,
+        'logs': logs,
+        'start_date': start_date,
+        'end_date': end_date,
+    })

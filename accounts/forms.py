@@ -53,6 +53,8 @@ class AccountSettingsForm(forms.ModelForm):
         return nickname
 
 class UserPromotionForm(forms.ModelForm):
+    suspend_user = forms.BooleanField(required=False, label="Suspend/Terminate User")
+
     class Meta:
         model = User
         fields = ['tier', 'applicable_shops']
@@ -66,6 +68,10 @@ class UserPromotionForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['applicable_shops'].queryset = Shop.objects.filter(is_active=True)
         self.fields['applicable_shops'].label = "Assignable Shops"
+
+        # Initialize suspend checkbox based on is_active
+        if self.instance.pk:
+            self.fields['suspend_user'].initial = not self.instance.is_active
 
         if self.current_user and not self.current_user.is_superuser:
             if self.current_user.tier == 'supervisor':

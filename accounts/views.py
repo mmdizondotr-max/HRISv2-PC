@@ -124,6 +124,24 @@ def account_promote(request, user_id):
     target_user = get_object_or_404(User, id=user_id)
 
     if request.method == 'POST':
+        action = request.POST.get('action')
+
+        # Handle Delete
+        if action == 'delete':
+            if request.user.tier != 'administrator' and not request.user.is_superuser:
+                messages.error(request, "Only Administrators can delete accounts.")
+                return redirect('accounts:account_promote', user_id=target_user.id)
+
+            # Additional check: Admin cannot delete other Admin (unless superuser)
+            if target_user.tier == 'administrator' and not request.user.is_superuser:
+                messages.error(request, "Administrators cannot delete other Administrators.")
+                return redirect('accounts:account_promote', user_id=target_user.id)
+
+            username = target_user.username
+            target_user.delete()
+            messages.success(request, f"User {username} deleted permanently.")
+            return redirect('accounts:account_list')
+
         # Check permissions strictly before binding form or saving
         if not request.user.is_superuser:
             if request.user.tier == 'administrator':
@@ -134,7 +152,20 @@ def account_promote(request, user_id):
 
         form = UserPromotionForm(request.POST, instance=target_user, current_user=request.user)
         if form.is_valid():
-            form.save()
+            user = form.save(commit=False)
+            user.save()
+            form.save_m2m() # Save assignment changes from form first
+
+            # Handle suspension
+            is_suspended = form.cleaned_data.get('suspend_user')
+            if is_suspended:
+                user.is_active = False
+                user.applicable_shops.clear() # Force clear assignments, overriding form
+                user.save()
+            else:
+                user.is_active = True
+                user.save()
+
             messages.success(request, f"User {target_user.username} updated.")
             return redirect('accounts:account_list')
     else:
