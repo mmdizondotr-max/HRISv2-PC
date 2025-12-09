@@ -76,18 +76,37 @@ class ScheduleAlgorithmTests(TestCase):
         s = Schedule.objects.create(week_start_date=yesterday)
         Shift.objects.create(schedule=s, user=self.u1, shop=self.shop1, date=yesterday, role='main')
 
+        # Add another user with baseline score to allow normalization to work meaningfully
+        UserShopScore.objects.create(user=self.u2, shop=self.shop1, score=100.0)
+        # u1 score will be created by the command (starts 100) or we create it here
+        UserShopScore.objects.create(user=self.u1, shop=self.shop1, score=100.0)
+
         # 1. Absent (No TimeLog)
+        # u1: 100 -> +20 = 120
+        # u2: 100
+        # Avg = 110. Delta = 100 - 110 = -10.
+        # u1 Final = 120 - 10 = 110.
+        # u2 Final = 100 - 10 = 90.
+
         cmd = UpdateScoreCommand()
         cmd.handle()
 
         score = UserShopScore.objects.get(user=self.u1, shop=self.shop1).score
-        # Expect Increase (100 + 20 = 120)
-        self.assertEqual(score, 120.0)
+        self.assertAlmostEqual(score, 110.0)
 
         # 2. Worked Main
+        # Reset scores for clarity
+        UserShopScore.objects.filter(shop=self.shop1).update(score=100.0)
+
         TimeLog.objects.create(user=self.u1, shop=self.shop1, date=yesterday, time_in=datetime.time(9,0))
         cmd.handle()
 
+        # u1 (Worked): 100 - 5 (Fatigue) - 2 (Rotation) = 93.
+        # u2 (No Shift): 100.
+        # Avg = (93 + 100) / 2 = 96.5.
+        # Delta = 100 - 96.5 = +3.5.
+        # u1 Final = 93 + 3.5 = 96.5.
+        # u2 Final = 100 + 3.5 = 103.5.
+
         score = UserShopScore.objects.get(user=self.u1, shop=self.shop1).score
-        # Expect Decrease (120 - 5 (Fatigue) - 2 (Rotation) = 113)
-        self.assertEqual(score, 113.0)
+        self.assertAlmostEqual(score, 96.5)

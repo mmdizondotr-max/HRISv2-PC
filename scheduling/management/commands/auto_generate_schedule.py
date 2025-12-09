@@ -17,16 +17,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("It is not Sunday. Skipping auto-generation."))
             return
 
-        # Target next week (starting next Sunday? No, usually generated for UPCOMING week)
-        # Requirement: "auto-generated... by Sunday 12AM to ensure that staff have ample time to check their NEXT week schedule."
-        # If today is Sunday (Start of Week A), and we generate for "Next Week", that means Week B (starting today+7).
-        # "Ample time" implies we are generating for the week *after* the current one starts.
-        # Or does it mean generating for the week that *just started* (today)?
-        # If I generate on Sunday 12AM (start of Week A), and staff check it for "next week schedule", usually they mean Week A (starting today) is "current", Week B is "next".
-        # But if the schedule is for "this coming week" (Week A), and I generate it AT THE START of Week A, that is NOT ample time.
-        # So it must be for Week B (starting today + 7).
+        # Target next week.
+        # Requirement: "Week starts with Monday and ends with Sunday"
+        # Requirement: "auto-generated... by Sunday 12AM" (24 hours before week start)
+        # If Today is Sunday (6). Next Week starts Tomorrow (Monday).
+        # Target = Today + 1
 
-        target_start = today + datetime.timedelta(days=7)
+        target_start = today + datetime.timedelta(days=1)
 
         # Check if schedule exists
         schedule, created = Schedule.objects.get_or_create(week_start_date=target_start)

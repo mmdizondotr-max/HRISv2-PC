@@ -38,8 +38,9 @@ class Command(BaseCommand):
                 self.stdout.write(f"User {shift.user} was ABSENT (Main) at {shift.shop}.")
                 self._adjust_score_all_shops(shift.user, 20.0) # Significant Increase
 
-        # 2. Reserve Staff who WORKED (Scheduled Backup, Has TimeLog)
-        # "reserve will get a significant decrease in score for all future slots (greatly decrease chances of getting assigned for a more probable day off)"
+        # 2. Reserve Staff
+        # If WORKED (Has TimeLog): Decrease score (Fatigue)
+        # If NOT WORKED (No TimeLog): Treat as Day Off (Increase Score)
 
         backup_shifts = Shift.objects.filter(date=yesterday, role='backup')
 
@@ -50,6 +51,12 @@ class Command(BaseCommand):
                 # Worked!
                 self.stdout.write(f"User {shift.user} WORKED (Reserve) at {shift.shop}.")
                 self._adjust_score_all_shops(shift.user, -20.0) # Significant Decrease
+            else:
+                # Did NOT Work (Rest)
+                # "Unfair amount of days off mean that he's getting no work... Reserve should not have impact other than impacts of being on a Day-Off"
+                # Day Off = Increase Score to be ready for next Main.
+                self.stdout.write(f"User {shift.user} was RESERVE (No Work) at {shift.shop}.")
+                self._adjust_score_all_shops(shift.user, 10.0) # Rest Bonus
 
         # 3. Main Staff who WORKED (Scheduled Main, Has TimeLog)
         # "Whenever an employee is assigned as a main staff... its score decreases"
@@ -68,6 +75,24 @@ class Command(BaseCommand):
                  # "Score goes up for all slots of same shop during SAME week" -> Temporary.
                  # "Score goes lower for all slots of same shop during FOLLOWING weeks" -> Permanent Rotation.
                  self._adjust_score_shop(shift.user, shift.shop, -2.0) # Rotation Penalty
+
+        # 4. Normalization
+        # "Normalize them weekly to resetting team average to 100."
+        # We do this daily to prevent drift.
+
+        shops = set(UserShopScore.objects.values_list('shop', flat=True))
+        from attendance.models import Shop
+        for shop_id in shops:
+             # Calculate Average
+             scores = UserShopScore.objects.filter(shop_id=shop_id)
+             if scores.exists():
+                 avg = sum(s.score for s in scores) / scores.count()
+                 delta = 100.0 - avg
+                 if abs(delta) > 0.01:
+                     self.stdout.write(f"Normalizing Shop {shop_id} scores by {delta:.2f} (Avg was {avg:.2f})")
+                     for s in scores:
+                         s.score += delta
+                         s.save()
 
         self.stdout.write(self.style.SUCCESS("Score update complete."))
 
