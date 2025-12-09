@@ -54,7 +54,6 @@ class Shift(models.Model):
     score = models.FloatField(null=True, blank=True) # Score at the time of assignment
 
     class Meta:
-        unique_together = ('user', 'date') # User can't be in two places at once
         ordering = ['date', 'shop']
 
     def __str__(self):
