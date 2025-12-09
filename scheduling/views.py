@@ -190,6 +190,9 @@ def _generate_multi_week_schedule(shops, weeks):
 
     # 2. Iterate Weeks
     for schedule in weeks:
+        # Clear change logs for the schedule being regenerated
+        schedule.change_logs.all().delete()
+
         if schedule.is_published:
              ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated.")
 
@@ -292,7 +295,7 @@ def _generate_multi_week_schedule(shops, weeks):
                         # This sounds Global.
                         # Since our scores are (User, Shop), we must decrease ALL shop scores for this user.
                         for s_iter in shops:
-                            adjust_score(chosen_user.id, s_iter.id, -5.0) # Fatigue Penalty
+                            adjust_score(chosen_user.id, s_iter.id, -10.0) # Fatigue Penalty
 
                         # Apply Continuity (Already handled by `assigned_shops_this_week` check in `calculate_effective_score`)
                         # Note: The fatigue penalty (-5) fights the continuity bonus (+30).
@@ -317,11 +320,10 @@ def _generate_multi_week_schedule(shops, weeks):
                     candidates = []
                     # Filter: Applicable, Active, Approved
                     for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
-                        # Constraint: "only... if they have not been assigned as main staff to any shop for the week"
-                        if u.id in assigned_main_users:
-                            continue
+                        # Constraint: "only... if they have not been assigned as main staff to any shop for the day"
+                        # Not weekly exclusion, but daily exclusion logic handled by general availability
 
-                        # Not working today
+                        # Not working today (Main or Backup)
                         if Shift.objects.filter(schedule=schedule, date=current_date, user=u).exists():
                             continue
 

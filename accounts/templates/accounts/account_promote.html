@@ -15,12 +15,14 @@
                         <div class="mb-3">
                             <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                             {% if field.name == 'suspend_user' %}
+                                {% if request.user.is_superuser or request.user.tier == 'administrator' and target_user.tier != 'administrator' or request.user.tier == 'supervisor' and target_user.tier == 'regular' %}
                                 <div class="form-check">
                                     {{ field }}
                                     <label class="form-check-label text-danger" for="{{ field.id_for_label }}">
                                         Suspend/Terminate User (Removes assignments & blocks login)
                                     </label>
                                 </div>
+                                {% endif %}
                             {% else %}
                                 {{ field }}
                             {% endif %}
@@ -38,7 +40,7 @@
                     </div>
                 </form>
 
-                {% if request.user.tier == 'administrator' or request.user.is_superuser %}
+                {% if request.user.is_superuser or request.user.tier == 'administrator' and target_user.tier != 'administrator' or request.user.tier == 'supervisor' and target_user.tier == 'regular' %}
                 <hr>
                 <div class="d-grid gap-2">
                     <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
