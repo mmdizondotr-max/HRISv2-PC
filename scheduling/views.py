@@ -145,11 +145,27 @@ def generator(request):
         total_main_slots += req_main * 7
         total_res_slots += req_res * 7
 
-    staff_needed_main = math.ceil(total_main_slots / 6)
-    reserve_capacity_available = (staff_needed_main * 7) - total_main_slots
-    reserve_deficit = max(0, total_res_slots - reserve_capacity_available)
-    extra_staff = math.ceil(reserve_deficit / 7)
-    ideal_staff_count = staff_needed_main + extra_staff
+    # New Ideal Staff Calculation
+    # Formula: Max( ceil(Total_Main_Weekly / 6), Daily_Main_Max + 1 )
+    # Note: "Daily_Main_Max" is constant across days if shops have fixed requirements.
+    # It is Sum(shop.req_main)
+
+    daily_main_total = 0
+    for shop in shops:
+        try:
+            req_main = shop.requirement.required_main_staff
+        except ShopRequirement.DoesNotExist:
+            req_main = 1
+        daily_main_total += req_main
+
+    staff_needed_workload = math.ceil(total_main_slots / 6)
+    staff_needed_daily_coverage = daily_main_total + 1
+
+    # Check if we actually need reserves
+    if total_res_slots == 0:
+        staff_needed_daily_coverage = daily_main_total
+
+    ideal_staff_count = max(staff_needed_workload, staff_needed_daily_coverage)
 
     return render(request, 'scheduling/generator.html', {
         'weeks_data': weeks_data, # List of dicts
@@ -321,23 +337,40 @@ def _generate_multi_week_schedule(shops, weeks):
                     # Filter: Applicable, Active, Approved
                     for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
                         # Constraint: "only... if they have not been assigned as main staff to any shop for the day"
-                        # Not weekly exclusion, but daily exclusion logic handled by general availability
+                        # Main Staff Check:
+                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, role='main').exists():
+                            continue
 
-                        # Not working today (Main or Backup)
-                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u).exists():
+                        # Existing Reserve Count for this user today
+                        current_reserve_count = Shift.objects.filter(schedule=schedule, date=current_date, user=u, role='backup').count()
+
+                        # Prevent assigning same user to same shop twice on same day (sanity check)
+                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=shop).exists():
                             continue
 
                         # Score
                         score = calculate_effective_score(u, shop, current_date)
-                        candidates.append((u, score))
+
+                        # Add tuple: (User, Score, ReserveCount)
+                        candidates.append((u, score, current_reserve_count))
 
                     if not candidates:
                         break
 
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                    best_score = candidates[0][1]
-                    top_candidates = [c for c in candidates if abs(c[1] - best_score) < 0.001]
-                    chosen_user, final_score = random.choice(top_candidates)
+                    # Sort:
+                    # 1. Primary: Reserve Count (Ascending) -> Prioritize 0 shifts, then 1...
+                    # 2. Secondary: Score (Descending)
+                    candidates.sort(key=lambda x: (x[2], -x[1]))
+
+                    # We pick from top. Handle Ties?
+                    # Since we sort by Count first, then Score.
+                    # Let's just pick the top one.
+                    best_candidate = candidates[0]
+                    chosen_user = best_candidate[0]
+                    final_score = best_candidate[1]
+
+                    # Tie breaking logic can be added, but (Count, -Score) is usually strict enough.
+                    # If scores match, stable sort preserves order.
 
                     Shift.objects.create(
                         schedule=schedule,
@@ -484,3 +517,6 @@ def shift_add(request, schedule_id, date, shop_id, role):
     return render(request, 'scheduling/shift_add.html', {
         'form': form, 'date': target_date, 'shop': shop, 'role': role
     })
+
+def _generate_schedule(shops, schedule):
+    return _generate_multi_week_schedule(shops, [schedule])
