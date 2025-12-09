@@ -34,7 +34,10 @@ def preferences(request):
 @login_required
 def my_schedule(request):
     today = timezone.localdate()
-    start_of_current_week = today - datetime.timedelta(days=(today.weekday() + 1) % 7)
+    # Week starts Monday (0)
+    # If today is Monday(0), start_of_current_week = today - 0 = today
+    # If today is Sunday(6), start_of_current_week = today - 6 = Monday
+    start_of_current_week = today - datetime.timedelta(days=today.weekday())
     start_of_next_week = start_of_current_week + datetime.timedelta(days=7)
 
     schedule = Schedule.objects.filter(week_start_date=start_of_next_week, is_published=True).first()
@@ -75,16 +78,18 @@ def generator(request):
         return HttpResponseForbidden()
 
     today = timezone.localdate()
-    # Find start of next week (Sunday)
-    days_until_sunday = (6 - today.weekday()) % 7
-    if days_until_sunday == 0:
-        # If today is Sunday, "Next Week" means today + 7
-        next_week_start = today + datetime.timedelta(days=7)
-    else:
-        # e.g. Today is Monday (0). days_until_sunday = 6. Start = Today + 6 = Sunday.
-        next_week_start = today + datetime.timedelta(days=days_until_sunday)
-        if today.weekday() == 6:
-             next_week_start = today # If logic above failed for sunday
+    # Find start of next week (Monday)
+    # If today is Monday (0), next Monday is +7
+    # If today is Sunday (6), next Monday is +1
+    days_until_monday = (0 - today.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7 # Always target next week from today if today is Monday?
+        # Actually, if I run generator on Monday, I usually want "Next Week" preview.
+        # But if I want to edit "This Week", I might need a way to select.
+        # Standard behavior: Generator targets UPCOMING week.
+        pass
+
+    next_week_start = today + datetime.timedelta(days=days_until_monday)
 
     # We need to handle 4 weeks: next_week_start + 0, +7, +14, +21
     weeks = []
@@ -189,7 +194,18 @@ def _generate_multi_week_schedule(shops, weeks):
         user_scores[u.id] = {}
         # Ensure UserShopScore exists for applicable shops
         for s in u.applicable_shops.all():
-            score_obj, _ = UserShopScore.objects.get_or_create(user=u, shop=s)
+            # New Employee Logic: Start with MAX score of current employees for this shop
+            try:
+                score_obj = UserShopScore.objects.get(user=u, shop=s)
+            except UserShopScore.DoesNotExist:
+                # Calculate max score for this shop
+                existing_scores = UserShopScore.objects.filter(shop=s).values_list('score', flat=True)
+                if existing_scores:
+                    start_score = max(existing_scores)
+                else:
+                    start_score = 100.0
+                score_obj = UserShopScore.objects.create(user=u, shop=s, score=start_score)
+
             user_scores[u.id][s.id] = score_obj.score
 
     # Helper to get current score from memory
@@ -206,6 +222,23 @@ def _generate_multi_week_schedule(shops, weeks):
 
     # 2. Iterate Weeks
     for schedule in weeks:
+        # --- Pre-Week: Normalization ---
+        # "Reset team average to 100" per shop
+        for s in shops:
+            scores = []
+            users_in_shop = []
+            for u in all_users:
+                if s.id in user_scores.get(u.id, {}):
+                    scores.append(user_scores[u.id][s.id])
+                    users_in_shop.append(u.id)
+
+            if scores:
+                avg = sum(scores) / len(scores)
+                delta = 100.0 - avg
+                # Apply delta to all
+                for u_id in users_in_shop:
+                    adjust_score(u_id, s.id, delta)
+
         # Clear change logs for the schedule being regenerated
         schedule.change_logs.all().delete()
 
@@ -314,8 +347,8 @@ def _generate_multi_week_schedule(shops, weeks):
                             adjust_score(chosen_user.id, s_iter.id, -10.0) # Fatigue Penalty
 
                         # Apply Continuity (Already handled by `assigned_shops_this_week` check in `calculate_effective_score`)
-                        # Note: The fatigue penalty (-5) fights the continuity bonus (+30).
-                        # Net result: +25 for same shop, -5 for others. Correct.
+                        # Note: The fatigue penalty (-10) fights the continuity bonus (+30).
+                        # Net result: +20 for same shop, -10 for others. Correct.
 
         # --- Phase 2: Reserve Assignments ---
         # "moves from each day then each shop"
@@ -381,11 +414,14 @@ def _generate_multi_week_schedule(shops, weeks):
                         score=final_score
                     )
                     assigned_count += 1
-                    # Do we apply Fatigue/Continuity for Reserve?
-                    # Prompt doesn't explicitly say "Main only" for fatigue.
-                    # "Whenever an employee is assigned as a main staff... its score decreases".
-                    # So Reserve assignment does NOT trigger fatigue?
-                    # Prompt doesn't say. Assuming NO fatigue for Reserve (keeps them available for more reserve slots).
+
+                    # Reserve Impact:
+                    # "Working a Reserve shift should decrease... BUT only if they actually report... I have not simulated time in/outs... so being assigned a Reserve slot should not have impact other than impacts of being on a Day-Off."
+                    # "Day-Off" usually means score increases (Recovery).
+                    # So Reserve assignment in simulation = Recovery (Increase Score).
+                    # Increase for ALL shops to improve general availability.
+                    for s_iter in shops:
+                        adjust_score(chosen_user.id, s_iter.id, 10.0) # Reserve/Rest Bonus
 
         # --- End of Week Updates ---
         # "lower for all slots of the same shop during the following weeks" (Rotation)
