@@ -51,6 +51,7 @@ class Shift(models.Model):
     shop = models.ForeignKey('attendance.Shop', on_delete=models.CASCADE)
     date = models.DateField()
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='main')
+    score = models.FloatField(null=True, blank=True) # Score at the time of assignment
 
     class Meta:
         unique_together = ('user', 'date') # User can't be in two places at once
@@ -69,6 +70,18 @@ class UserPriority(models.Model):
 
     def __str__(self):
         return f"{self.user}: {self.score}"
+
+class UserShopScore(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='shop_scores')
+    shop = models.ForeignKey('attendance.Shop', on_delete=models.CASCADE, related_name='staff_scores')
+    score = models.FloatField(default=100.0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'shop')
+
+    def __str__(self):
+        return f"{self.user} - {self.shop}: {self.score}"
 
 class ShopRequirement(models.Model):
     """
