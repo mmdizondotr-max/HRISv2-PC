@@ -5,7 +5,7 @@ from accounts.models import User
 class PreferenceForm(forms.ModelForm):
     class Meta:
         model = Preference
-        fields = ['preferred_days_off_count', 'top_preferred_day_off', 'birthday']
+        fields = ['top_preferred_day_off', 'birthday'] # Removed preferred_days_off_count
         widgets = {
             'birthday': forms.DateInput(attrs={'type': 'date'}),
         }
