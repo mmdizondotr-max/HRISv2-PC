@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
+from django.utils import timezone
 
 class User(AbstractUser):
     TIER_CHOICES = (
@@ -51,3 +52,25 @@ class PasswordResetRequest(models.Model):
 
     def __str__(self):
         return f"Reset request for {self.user.username} ({self.created_at})"
+
+class AccountActionLog(models.Model):
+    ACTION_CHOICES = (
+        ('creation', 'Account Created'),
+        ('promotion', 'Promotion/Demotion'),
+        ('suspension', 'Suspension/Activation'),
+        ('update', 'Details Updated'),
+        ('assignment', 'Shop Assignment Changed'),
+        ('password_reset', 'Password Reset'),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='action_logs')
+    action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    details = models.TextField()
+    performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='performed_actions')
+    timestamp = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.user} - {self.action_type} - {self.timestamp}"
