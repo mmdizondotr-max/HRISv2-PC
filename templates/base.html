@@ -54,6 +54,10 @@
                                     <li><a class="dropdown-item" href="{% url 'accounts:account_list' %}">Account List</a></li>
                                     <li><a class="dropdown-item" href="{% url 'attendance:shop_list' %}">Shop Management</a></li>
                                     <li><a class="dropdown-item" href="{% url 'scheduling:generator' %}">Schedule Generation</a></li>
+                                    {% if user.tier == 'administrator' or user.is_superuser %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{% url 'scheduling:load_test_data' %}">Load Test</a></li>
+                                    {% endif %}
                                 </ul>
                             </li>
                         {% endif %}

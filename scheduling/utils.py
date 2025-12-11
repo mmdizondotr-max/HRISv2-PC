@@ -1,7 +1,11 @@
+from django.utils import timezone
+import datetime
+from scheduling.models import Shift, UserShopScore
+from attendance.models import TimeLog
 from attendance.models import Shop
-from accounts.models import User
 
 def ensure_roving_shop_and_assignments():
+    from accounts.models import User
     """
     Ensures 'Roving' shop exists.
     Updates assignments:
@@ -63,3 +67,74 @@ def ensure_roving_shop_and_assignments():
              # Note: This overwrites manual assignments. The prompt implies this is a rule.
              if set(current_applicable) != target_applicable:
                 user.applicable_shops.set(target_applicable)
+
+def update_scores_for_date(target_date):
+    """
+    Updates user scores based on attendance for the given target_date.
+    Logic extracted from update_attendance_scores management command.
+    """
+    print(f"Processing scores for {target_date}...")
+
+    # 1. Main Staff who were ABSENT (Scheduled Main, No TimeLog)
+    main_shifts = Shift.objects.filter(date=target_date, role='main')
+
+    for shift in main_shifts:
+        has_timelog = TimeLog.objects.filter(user=shift.user, date=target_date).exists()
+
+        if not has_timelog:
+            # Absent!
+            print(f"User {shift.user} was ABSENT (Main) at {shift.shop}.")
+            _adjust_score_all_shops(shift.user, 20.0) # Significant Increase
+
+    # 2. Reserve Staff
+    backup_shifts = Shift.objects.filter(date=target_date, role='backup')
+
+    for shift in backup_shifts:
+        has_timelog = TimeLog.objects.filter(user=shift.user, date=target_date).exists()
+
+        if has_timelog:
+            # Worked!
+            print(f"User {shift.user} WORKED (Reserve) at {shift.shop}.")
+            _adjust_score_all_shops(shift.user, -20.0) # Significant Decrease
+        else:
+            # Did NOT Work (Rest)
+            print(f"User {shift.user} was RESERVE (No Work) at {shift.shop}.")
+            _adjust_score_all_shops(shift.user, 10.0) # Rest Bonus
+
+    # 3. Main Staff who WORKED (Scheduled Main, Has TimeLog)
+    for shift in main_shifts:
+        has_timelog = TimeLog.objects.filter(user=shift.user, date=target_date).exists()
+        if has_timelog:
+                # Worked Main
+                print(f"User {shift.user} WORKED (Main) at {shift.shop}.")
+                _adjust_score_all_shops(shift.user, -5.0) # Fatigue Penalty
+                _adjust_score_shop(shift.user, shift.shop, -2.0) # Rotation Penalty
+
+    # 4. Normalization
+    shops = set(UserShopScore.objects.values_list('shop', flat=True))
+    for shop_id in shops:
+            scores = UserShopScore.objects.filter(shop_id=shop_id)
+            if scores.exists():
+                avg = sum(s.score for s in scores) / scores.count()
+                delta = 100.0 - avg
+                if abs(delta) > 0.01:
+                    print(f"Normalizing Shop {shop_id} scores by {delta:.2f} (Avg was {avg:.2f})")
+                    for s in scores:
+                        s.score += delta
+                        s.save()
+
+def _adjust_score_shop(user, shop, amount):
+    s, _ = UserShopScore.objects.get_or_create(user=user, shop=shop)
+    s.score += amount
+    s.save()
+
+def _adjust_score_all_shops(user, amount):
+    scores = UserShopScore.objects.filter(user=user)
+    if not scores.exists():
+        # Initialize for applicable shops if no scores exist
+        for shop in user.applicable_shops.all():
+            UserShopScore.objects.create(user=user, shop=shop, score=100.0 + amount)
+    else:
+        for s in scores:
+            s.score += amount
+            s.save()
