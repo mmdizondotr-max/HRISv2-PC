@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Schedule History - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Published Schedule History</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <a href="{% url 'scheduling:my_schedule' %}" class="btn btn-sm btn-outline-secondary">
+                Back to My Schedule
+            </a>
+        </div>
+    </div>
+
+    {% if schedules %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Week Starting</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for schedule in schedules %}
+                <tr>
+                    <td>{{ schedule.week_start_date|date:"F d, Y" }} ({{ schedule.week_start_date|date:"l" }})</td>
+                    <td>{{ schedule.created_at|date:"M d, Y H:i" }}</td>
+                    <td>
+                        <a href="{% url 'scheduling:schedule_history_detail' schedule.id %}" class="btn btn-sm btn-primary">
+                            View Schedule
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info" role="alert">
+        No published schedules found in history.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

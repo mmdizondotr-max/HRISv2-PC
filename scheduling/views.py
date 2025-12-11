@@ -74,6 +74,58 @@ def my_schedule(request):
     })
 
 @login_required
+def schedule_history_list(request):
+    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
+        return HttpResponseForbidden()
+
+    today = timezone.localdate()
+    start_of_current_week = today - datetime.timedelta(days=today.weekday())
+
+    # Show schedules starting BEFORE next week?
+    # Usually History means past. So strictly less than next week?
+    # Or everything published?
+    # Requirement: "Published Schedule History" showing all previously published schedule.
+    # Including the current one?
+    # "showing all previously published schedule". Usually implies everything from the past.
+    # Let's show everything that is published.
+
+    schedules = Schedule.objects.filter(is_published=True).order_by('-week_start_date')
+
+    return render(request, 'scheduling/schedule_history_list.html', {'schedules': schedules})
+
+@login_required
+def schedule_history_detail(request, schedule_id):
+    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
+        return HttpResponseForbidden()
+
+    schedule = get_object_or_404(Schedule, id=schedule_id, is_published=True)
+
+    dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
+    shops = Shop.objects.all() # Show all shops even inactive ones for history? Maybe safer to show active or all.
+
+    matrix = {}
+    for d in dates:
+        matrix[d] = {}
+        for s in shops:
+            matrix[d][s.id] = {'main': [], 'backup': []}
+
+    shifts = schedule.shifts.all().select_related('user', 'shop')
+    for shift in shifts:
+        if shift.date in matrix and shift.shop.id in matrix[shift.date]:
+             if shift.role == 'main':
+                 matrix[shift.date][shift.shop.id]['main'].append(shift.user)
+             else:
+                 matrix[shift.date][shift.shop.id]['backup'].append(shift.user)
+
+    return render(request, 'scheduling/schedule_history_detail.html', {
+        'schedule': schedule,
+        'dates': dates,
+        'shops': shops,
+        'matrix': matrix,
+        'change_logs': schedule.change_logs.all().order_by('-created_at')
+    })
+
+@login_required
 def generator(request):
     if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
         return HttpResponseForbidden()

@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% load schedule_extras %}
+
+{% block title %}History: Week of {{ schedule.week_start_date }} - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">History: Week of {{ schedule.week_start_date|date:"M d, Y" }}</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <a href="{% url 'scheduling:schedule_history_list' %}" class="btn btn-sm btn-outline-secondary">
+                Back to History List
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-secondary text-white">
+            Schedule Matrix (Read-Only)
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm text-center mb-0" style="font-size: 0.85rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 150px;">Shop</th>
+                            <th style="width: 80px;">Role</th>
+                            {% for date in dates %}
+                            <th>
+                                {{ date|date:"D" }}<br>
+                                {{ date|date:"d/m" }}
+                            </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for shop in shops %}
+                            <!-- Check if Roving -->
+                            {% if shop.name == 'Roving' %}
+                                <tr>
+                                    <td rowspan="1" class="align-middle fw-bold table-warning">{{ shop.name }}</td>
+                                    <td class="align-middle table-warning">Duty</td>
+                                    {% for date in dates %}
+                                        <td class="align-middle table-warning">
+                                            {% with assignments=matrix|get_item:date|get_item:shop.id %}
+                                                {% for user in assignments.main %}
+                                                    <div class="badge bg-dark text-wrap mb-1" style="width: 100%;">
+                                                        {{ user.get_short_name_for_schedule }}
+                                                    </div>
+                                                {% endfor %}
+                                            {% endwith %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% else %}
+                                <!-- Standard Shop: Main Row -->
+                                <tr>
+                                    <td rowspan="2" class="align-middle fw-bold">{{ shop.name }}</td>
+                                    <td class="align-middle bg-light">Duty</td>
+                                    {% for date in dates %}
+                                        <td class="align-middle">
+                                            {% with assignments=matrix|get_item:date|get_item:shop.id %}
+                                                {% for user in assignments.main %}
+                                                    <div class="badge bg-primary text-wrap mb-1" style="width: 100%;">
+                                                        {{ user.get_short_name_for_schedule }}
+                                                    </div>
+                                                {% endfor %}
+                                            {% endwith %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                                <!-- Standard Shop: Backup Row -->
+                                <tr>
+                                    <td class="align-middle bg-light">Standby</td>
+                                    {% for date in dates %}
+                                        <td class="align-middle">
+                                            {% with assignments=matrix|get_item:date|get_item:shop.id %}
+                                                {% for user in assignments.backup %}
+                                                    <div class="badge bg-info text-dark text-wrap mb-1" style="width: 100%;">
+                                                        {{ user.get_short_name_for_schedule }}
+                                                    </div>
+                                                {% endfor %}
+                                            {% endwith %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Changelogs -->
+    <div class="card">
+        <div class="card-header">
+            <h4>Change Logs</h4>
+        </div>
+        <div class="card-body">
+            {% if change_logs %}
+            <ul class="list-group list-group-flush">
+                {% for log in change_logs %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <small class="text-muted">{{ log.created_at|date:"M d, H:i" }}</small><br>
+                        {{ log.message }}
+                    </div>
+                    <span class="badge bg-secondary rounded-pill">{{ log.user.username|default:"System" }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted">No changes logged for this schedule.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
