@@ -349,6 +349,7 @@ def _generate_multi_week_schedule(shops, weeks):
 
         assigned_main_count = {u.id: 0 for u in all_users}
         assigned_main_shop = {u.id: None for u in all_users}
+        weekly_reserve_count = {u.id: 0 for u in all_users}
         daily_main_assignments = {i: set() for i in range(7)}
         daily_reserve_counts = {i: {u.id: 0 for u in all_users} for i in range(7)}
 
@@ -362,6 +363,7 @@ def _generate_multi_week_schedule(shops, weeks):
                     daily_main_assignments[day_idx].add(s.user.id)
                 else:
                     daily_reserve_counts[day_idx][s.user.id] = daily_reserve_counts[day_idx].get(s.user.id, 0) + 1
+                    weekly_reserve_count[s.user.id] = weekly_reserve_count.get(s.user.id, 0) + 1
 
         # --- Phase 1: Main Assignments (Standard Shops) ---
         for i in range(7):
@@ -408,7 +410,8 @@ def _generate_multi_week_schedule(shops, weeks):
                                 pass
 
                             if user_history[u.id]['last_main_shop'] == shop.id: score -= 200
-                            score -= (assigned_main_count[u.id] * 10)
+                            # Heavily penalize workload to ensure rotation and balance (overcomes continuity bonus)
+                            score -= (assigned_main_count[u.id] * 2000)
                             candidates.append((u, score))
                         return candidates
 
@@ -468,6 +471,9 @@ def _generate_multi_week_schedule(shops, weeks):
                         except UserShopScore.DoesNotExist:
                             pass
 
+                        # Penalize if already assigned as reserve this week to rotate standby duties
+                        score -= (weekly_reserve_count[u.id] * 50)
+
                         candidates.append((u, score))
 
                     if not candidates:
@@ -487,6 +493,7 @@ def _generate_multi_week_schedule(shops, weeks):
 
                     assigned_count += 1
                     daily_reserve_counts[day_idx][chosen_user.id] += 1
+                    weekly_reserve_count[chosen_user.id] += 1
 
         # --- Phase 3: Roving Assignments ---
         if roving_shop:
