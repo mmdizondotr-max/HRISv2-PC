@@ -22,8 +22,8 @@
                         <tr>
                             <th></th>
                             {% for shop in shops %}
-                                <th>Main</th>
-                                <th>Reserve</th>
+                                <th>Duty</th>
+                                <th>Standby</th>
                             {% endfor %}
                         </tr>
                     </thead>
@@ -32,13 +32,13 @@
                         <tr>
                             <td class="fw-bold">{{ date|date:"D, M d" }}</td>
                             {% for shop in shops %}
-                                <!-- Main Staff -->
+                                <!-- Duty Staff -->
                                 <td>
                                     {% for user in matrix|get_item:date|get_item:shop.id|get_item:'main' %}
                                         <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
                                     {% endfor %}
                                 </td>
-                                <!-- Reserve Staff -->
+                                <!-- Standby Staff -->
                                 <td>
                                     {% for user in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
                                         <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
