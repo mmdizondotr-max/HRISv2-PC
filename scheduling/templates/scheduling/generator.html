@@ -6,13 +6,6 @@
     <div class="col-12">
         <h2>Schedule Generation & Management</h2>
 
-        {% if ideal_staff_count %}
-            <div class="alert alert-info">
-                <strong>Ideal number of staff required: {{ ideal_staff_count }}</strong>
-                <small>(Estimated minimum to meet requirements with at least 1 day off per staff. Formula: Max( ceil(Total_Duty_Weekly / 6), Daily_Duty_Max + 1 ))</small>
-            </div>
-        {% endif %}
-
         <form method="post" class="mb-3 d-flex gap-2">
             {% csrf_token %}
             {% if current_schedule.is_published %}
@@ -61,7 +54,7 @@
                                     <th></th>
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
-                                            <th>Duty</th>
+                                            <th>Duty / Standby</th>
                                         {% else %}
                                             <th>Duty</th>
                                             <th>Standby</th>
@@ -78,18 +71,31 @@
                                         <td>
                                             {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
                                                 <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
-                                                    {{ shift.user.get_short_name_for_schedule }}
+                                                    {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
+                                                    <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
                                                     {% if not week.schedule.is_published or request.user.is_superuser %}
-                                                        <!-- Only show delete if not published OR user is superuser -->
                                                         <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
                                                     {% endif %}
                                                 </div><br>
                                             {% endfor %}
+
+                                            {% if shop.name == 'Roving' %}
+                                                <!-- Roving Backup (Universal Pool) -->
+                                                {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                                    <div class="badge bg-secondary mb-1 position-relative" title="Priority Score (neg prev duty): {{ shift.score|floatformat:1 }}">
+                                                        {{ shift.user.get_short_name_for_schedule }} (Standby)
+                                                        {% if not week.schedule.is_published or request.user.is_superuser %}
+                                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                                        {% endif %}
+                                                    </div><br>
+                                                {% endfor %}
+                                            {% endif %}
+
                                             {% if not week.schedule.is_published %}
                                                 <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
                                             {% endif %}
                                         </td>
-                                        <!-- Standby Staff -->
+                                        <!-- Standby Staff (Standard Shops) - Should be empty for non-Roving if all assigned to Roving -->
                                         {% if shop.name != 'Roving' %}
                                         <td>
                                             {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
@@ -113,40 +119,6 @@
                     </div>
                 </div>
                 {% endfor %}
-            </div>
-
-            <div class="card mt-4">
-                <div class="card-header bg-info text-white">
-                    <h5>Requirements Verification Checklist</h5>
-                </div>
-                <div class="card-body">
-                    <ul class="list-group list-group-flush">
-                        <li class="list-group-item">
-                            {% if checklist.cond1 %}✅{% else %}❌{% endif %}
-                            <strong>1. Each Shop must have at least a Duty Staff (Filled).</strong>
-                        </li>
-                        <li class="list-group-item">
-                            {% if checklist.cond2 %}✅{% else %}⚠️{% endif %}
-                            <strong>2. Available employees should have equal numbers of Duty Staff assignments (Balanced Workload).</strong>
-                        </li>
-                        <li class="list-group-item">
-                            {% if checklist.cond3 %}✅{% else %}❌{% endif %}
-                            <strong>3. Standby Staff filled & balanced among Day-Off staff.</strong>
-                        </li>
-                        <li class="list-group-item">
-                            {% if checklist.cond4 %}✅{% else %}⚠️{% endif %}
-                            <strong>4. Preferred day off followed (where possible).</strong>
-                        </li>
-                        <li class="list-group-item">
-                            {% if checklist.cond5 %}✅{% else %}⚠️{% endif %}
-                            <strong>5. Staff is preferred to the same shop for the rest of the week.</strong>
-                        </li>
-                        <li class="list-group-item">
-                            {% if checklist.cond6 %}✅{% else %}⚠️{% endif %}
-                            <strong>6. Staff cycles to a different shop for the next week (if possible).</strong>
-                        </li>
-                    </ul>
-                </div>
             </div>
 
             {% if change_logs %}

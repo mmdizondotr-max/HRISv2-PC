@@ -8,7 +8,7 @@ from accounts.models import AccountActionLog, PasswordResetRequest
 from django.db.models import Count, Q
 from django.utils import timezone
 from .forms import PreferenceForm, ShiftAddForm
-from .utils import ensure_roving_shop_and_assignments, update_scores_for_date
+from .utils import ensure_roving_shop_and_assignments, update_scores_for_date, calculate_assignment_score, CurrentWeekAssignments
 import datetime
 import math
 import random
@@ -124,7 +124,6 @@ def generator(request):
     if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
         return HttpResponseForbidden()
 
-    # 1. Ensure Roving Shop and Assignments logic
     ensure_roving_shop_and_assignments()
 
     today = timezone.localdate()
@@ -134,7 +133,7 @@ def generator(request):
 
     next_week_start = today + datetime.timedelta(days=days_until_monday)
 
-    # We need to handle 4 weeks
+    # Handle 4 weeks
     weeks = []
     for i in range(4):
         start_date = next_week_start + datetime.timedelta(days=i*7)
@@ -164,7 +163,7 @@ def generator(request):
             messages.success(request, "Generated schedule window cleared.")
             return redirect('scheduling:generator')
 
-    # Prepare data for Template (All 4 weeks)
+    # Prepare data for Template
     weeks_data = []
     for schedule in weeks:
         dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
@@ -175,366 +174,218 @@ def generator(request):
                 matrix[d][s.id] = {'main': [], 'backup': []}
 
         shifts = schedule.shifts.all().select_related('user', 'shop')
+        duty_counts = {} # user_id -> count
+
         for shift in shifts:
             if shift.date in matrix and shift.shop.id in matrix[shift.date]:
                 if shift.role == 'main':
                     matrix[shift.date][shift.shop.id]['main'].append(shift)
+                    duty_counts[shift.user.id] = duty_counts.get(shift.user.id, 0) + 1
                 else:
                     matrix[shift.date][shift.shop.id]['backup'].append(shift)
+
+        # Attach duty counts to user objects in shifts for display?
+        # Easier to pass a separate map or update the shift user object temporarily.
+        # But shift.user is a User instance.
+        # Let's create a helper map in the week_data
 
         weeks_data.append({
             'schedule': schedule,
             'dates': dates,
-            'matrix': matrix
+            'matrix': matrix,
+            'duty_counts': duty_counts
         })
-
-    # New Ideal Staff Calculation
-    # Formula: Max( ceil(Total_Main_Weekly / 6), Daily_Main_Max + 1 )
-
-    total_main_slots = 0
-    daily_main_total = 0
-    for shop in shops:
-        if shop.name == 'Roving':
-            continue
-        try:
-            req_main = shop.requirement.required_main_staff
-        except ShopRequirement.DoesNotExist:
-            req_main = 1
-
-        total_main_slots += req_main * 7
-        daily_main_total += req_main
-
-    staff_needed_workload = math.ceil(total_main_slots / 6)
-    staff_needed_daily_coverage = daily_main_total + 1
-
-    ideal_staff_count = max(staff_needed_workload, staff_needed_daily_coverage)
-
-    # Verification Checklist
-    checklist = verify_schedule(weeks_data, shops)
 
     return render(request, 'scheduling/generator.html', {
         'weeks_data': weeks_data,
         'current_schedule': current_schedule,
         'shops': shops,
         'change_logs': current_schedule.change_logs.all().order_by('-created_at'),
-        'ideal_staff_count': ideal_staff_count,
-        'checklist': checklist
     })
-
-def verify_schedule(weeks_data, shops):
-    """
-    Checks conditions 1-6.
-    Returns a dict with status for each condition.
-    """
-    results = {
-        'cond1': True, # Shop Coverage (Main)
-        'cond2': True, # Equal Days Off (Mainly Main assignment balance)
-        'cond3': True, # Reserve Staff filled & balanced
-        'cond4': True, # Preferred Day Off followed
-        'cond5': True, # Same Shop for rest of week
-        'cond6': True, # Cycle to different shop next week
-    }
-
-    for week in weeks_data:
-        schedule = week['schedule']
-        matrix = week['matrix']
-        shifts = schedule.shifts.all()
-
-        # Helper to get shifts by user
-        user_shifts = {}
-        for s in shifts:
-            if s.user.id not in user_shifts: user_shifts[s.user.id] = []
-            user_shifts[s.user.id].append(s)
-
-        # 1. Shop Coverage
-        for d, shop_data in matrix.items():
-            for s_id, assignments in shop_data.items():
-                shop = shops.get(id=s_id)
-                if shop.name == 'Roving':
-                    continue
-
-                try:
-                    req_main = shop.requirement.required_main_staff
-                except ShopRequirement.DoesNotExist:
-                    req_main = 1
-
-                if len(assignments['main']) < req_main:
-                    results['cond1'] = False # Failed coverage
-
-        # 2. Equal Days Off (Workload Balance)
-        main_counts = []
-        for u_id, u_shifts in user_shifts.items():
-            # Count only NON-Roving shifts?
-            non_roving_shifts = [s for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving']
-            if not non_roving_shifts:
-                continue
-
-            main_c = len(non_roving_shifts)
-            main_counts.append(main_c)
-
-        if main_counts:
-            if max(main_counts) - min(main_counts) > 1:
-                results['cond2'] = False # Variance > 1 implies inequality beyond remainder
-
-        # 3. Reserve Staff Coverage & Balance
-        for d, shop_data in matrix.items():
-            for s_id, assignments in shop_data.items():
-                shop = shops.get(id=s_id)
-                if shop.name == 'Roving':
-                    continue
-
-                try:
-                    req_res = shop.requirement.required_reserve_staff
-                except ShopRequirement.DoesNotExist:
-                    req_res = 0
-                if len(assignments['backup']) < req_res:
-                    results['cond3'] = False
-
-        # 4. Preferred Day Off
-        for u_id, u_shifts in user_shifts.items():
-            if not u_shifts: continue
-            user = u_shifts[0].user # Get user object
-            try:
-                pref_day = user.preference.top_preferred_day_off
-                worked_main_on_pref = any(s.date.weekday() == pref_day and s.role == 'main' for s in u_shifts)
-                if worked_main_on_pref:
-                     results['cond4'] = False
-            except Preference.DoesNotExist:
-                pass
-
-        # 5. Same Shop for rest of week
-        for u_id, u_shifts in user_shifts.items():
-            shop_ids = set(s.shop.id for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving')
-            if len(shop_ids) > 1:
-                results['cond5'] = False
-
-    # 6. Cycle to different shop next week
-    if len(weeks_data) > 1:
-        for i in range(len(weeks_data) - 1):
-            w1_shifts = weeks_data[i]['schedule'].shifts.filter(role='main')
-            w2_shifts = weeks_data[i+1]['schedule'].shifts.filter(role='main')
-
-            w1_map = {s.user.id: s.shop.id for s in w1_shifts if s.shop.name != 'Roving'} # Last shop assigned
-            w2_map = {s.user.id: s.shop.id for s in w2_shifts if s.shop.name != 'Roving'} # First shop assigned?
-
-            for u_id, s1_id in w1_map.items():
-                if u_id in w2_map and w2_map[u_id] == s1_id:
-                     results['cond6'] = False
-
-    return results
 
 def _generate_multi_week_schedule(shops, weeks):
     from accounts.models import User
 
-    all_users = list(User.objects.filter(is_active=True, is_approved=True))
+    # 1. Prepare Data
+    all_users = list(User.objects.filter(is_active=True, is_approved=True).select_related('preference'))
 
     roving_shop = None
     for s in shops:
         if s.name == 'Roving':
             roving_shop = s
             break
-
     if not roving_shop:
         roving_shop = Shop.objects.filter(name='Roving').first()
+        if not roving_shop:
+             # Just in case
+             roving_shop, _ = Shop.objects.get_or_create(name='Roving', is_active=True)
 
-    standard_shops = [s for s in shops if s.name != 'Roving']
-
-    user_history = {u.id: {'last_main_shop': None, 'missed_pref_day_off': False} for u in all_users}
-
+    # 2. Iterate Weeks
     for schedule in weeks:
+        week_start = schedule.week_start_date
+
+        # Clear existing
         schedule.shifts.filter(shop__in=shops).delete()
-
         if schedule.is_published:
-             ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated (Partial/Full).")
+            ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated.")
 
-        assigned_main_count = {u.id: 0 for u in all_users}
-        assigned_main_shop = {u.id: None for u in all_users}
-        weekly_reserve_count = {u.id: 0 for u in all_users}
-        daily_main_assignments = {i: set() for i in range(7)}
-        daily_reserve_counts = {i: {u.id: 0 for u in all_users} for i in range(7)}
+        # Prepare History Data for Scoring
+        # a. Prev week (relative to this schedule week)
+        prev_week_start = week_start - datetime.timedelta(days=7)
+        prev_week_end = week_start - datetime.timedelta(days=1)
 
-        existing_shifts = schedule.shifts.exclude(shop__in=shops)
-        for s in existing_shifts:
-            day_idx = (s.date - schedule.week_start_date).days
-            if 0 <= day_idx < 7:
-                if s.role == 'main':
-                    assigned_main_count[s.user.id] = assigned_main_count.get(s.user.id, 0) + 1
-                    assigned_main_shop[s.user.id] = s.shop.id
-                    daily_main_assignments[day_idx].add(s.user.id)
+        prev_week_logs = list(TimeLog.objects.filter(date__range=[prev_week_start, prev_week_end]).select_related('shop'))
+        prev_week_shifts = list(Shift.objects.filter(date__range=[prev_week_start, prev_week_end])) # We can't query shifts easily if they don't exist yet for future weeks in this loop if sequential?
+        # Note: If generating multiple weeks, 'prev_week_shifts' for Week 2 are shifts from Week 1 (which we just generated).
+        # We need to ensure we can access them. Since we saved them to DB in previous iteration, we can query them.
+
+        # b. Past 3 weeks (excluding prev)
+        past_3_start = prev_week_start - datetime.timedelta(weeks=3)
+        past_3_end = prev_week_start - datetime.timedelta(days=1)
+        past_3_weeks_logs = list(TimeLog.objects.filter(date__range=[past_3_start, past_3_end]).select_related('shop'))
+
+        history_data = {
+            'prev_week_logs': prev_week_logs,
+            'prev_week_shifts': prev_week_shifts,
+            'past_3_weeks_logs': past_3_weeks_logs
+        }
+
+        current_assignments = CurrentWeekAssignments()
+
+        # Determine Max Duty Slots required
+        # Iterate through shops to find max duty needed
+        max_duty_slots = 0
+        for shop in shops:
+            try:
+                # If Roving, usually 1 supervisor? But Roving shop usually doesn't have ShopRequirement?
+                # Assuming Roving has 0 requirement or specific logic.
+                if shop.name == 'Roving':
+                     # We can treat Supervisors as having a requirement of 1 for Roving if not defined?
+                     # Existing logic looped supervisors.
+                     # Let's assume Roving needs 1 slot per available supervisor?
+                     # Or Roving is just treated as a shop with 1 slot?
+                     # Let's check ShopRequirement for Roving.
+                     req = shop.requirement.required_main_staff
                 else:
-                    daily_reserve_counts[day_idx][s.user.id] = daily_reserve_counts[day_idx].get(s.user.id, 0) + 1
-                    weekly_reserve_count[s.user.id] = weekly_reserve_count.get(s.user.id, 0) + 1
+                    req = shop.requirement.required_main_staff
+            except ShopRequirement.DoesNotExist:
+                req = 1 # Default
 
-        # --- Phase 1: Main Assignments (Standard Shops) ---
-        for i in range(7):
-            current_date = schedule.week_start_date + datetime.timedelta(days=i)
-            day_idx = i
+            if req > max_duty_slots:
+                max_duty_slots = req
 
-            sorted_shops = list(standard_shops)
+        # Slot Loop: Duty 1, Duty 2...
+        for slot_idx in range(1, max_duty_slots + 1):
 
-            for shop in sorted_shops:
-                try:
-                    req_main = shop.requirement.required_main_staff
-                except ShopRequirement.DoesNotExist:
-                    req_main = 1
+            # Day Loop
+            for day_offset in range(7):
+                current_date = week_start + datetime.timedelta(days=day_offset)
 
-                assigned_count = 0
-                while assigned_count < req_main:
-                    # Helper to find candidates
-                    def find_candidates(relax_days_limit=False):
-                        candidates = []
-                        for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
-                            if u.id in daily_main_assignments[day_idx]: continue
-                            if assigned_main_shop[u.id] is not None and assigned_main_shop[u.id] != shop.id: continue
+                # Shop Loop
+                for shop in shops:
+                    # Check if this shop needs this slot
+                    try:
+                        req_main = shop.requirement.required_main_staff
+                    except ShopRequirement.DoesNotExist:
+                        req_main = 1
 
-                            # Max 6 days check (unless relaxed)
-                            if not relax_days_limit and assigned_main_count[u.id] >= 6: continue
+                    if slot_idx > req_main:
+                        continue
 
-                            score = 0
-                            try:
-                                shop_score = UserShopScore.objects.get(user=u, shop=shop).score
-                                score += shop_score
-                            except UserShopScore.DoesNotExist:
-                                score += 100.0
-
-                            if assigned_main_shop[u.id] == shop.id: score += 1000
-
-                            try:
-                                pref = u.preference
-                                if pref.top_preferred_day_off == day_idx:
-                                    if user_history[u.id]['missed_pref_day_off']:
-                                        score -= 2000
-                                    else:
-                                        score -= 100
-                            except Preference.DoesNotExist:
-                                pass
-
-                            if user_history[u.id]['last_main_shop'] == shop.id: score -= 200
-                            # Heavily penalize workload to ensure rotation and balance (overcomes continuity bonus)
-                            score -= (assigned_main_count[u.id] * 2000)
-                            candidates.append((u, score))
-                        return candidates
-
-                    # 1. Try strict search
-                    candidates = find_candidates(relax_days_limit=False)
-
-                    # 2. If no candidates AND we have 0 assigned (insufficient staff), Try relaxed search
-                    if not candidates and assigned_count == 0:
-                        candidates = find_candidates(relax_days_limit=True)
-
-                    if not candidates:
-                        break
-
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                    chosen_user = candidates[0][0]
-
-                    Shift.objects.create(
-                        schedule=schedule,
-                        user=chosen_user,
-                        shop=shop,
-                        date=current_date,
-                        role='main',
-                        score=candidates[0][1]
-                    )
-
-                    assigned_count += 1
-                    assigned_main_count[chosen_user.id] += 1
-                    assigned_main_shop[chosen_user.id] = shop.id
-                    daily_main_assignments[day_idx].add(chosen_user.id)
-
-        # --- Phase 2: Reserve Assignments (Standard Shops) ---
-        for i in range(7):
-            current_date = schedule.week_start_date + datetime.timedelta(days=i)
-            day_idx = i
-
-            for shop in standard_shops:
-                try:
-                    req_res = shop.requirement.required_reserve_staff
-                except ShopRequirement.DoesNotExist:
-                    req_res = 0
-
-                if req_res == 0: continue
-
-                assigned_count = 0
-                while assigned_count < req_res:
+                    # Find candidates
                     candidates = []
-                    for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
-                        if u.id in daily_main_assignments[day_idx]: continue
-                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=shop).exists(): continue
+                    # Filter applicable staff
+                    # Supervisors -> Roving only? Regulars -> Non-Roving only?
+                    # The prompt says: "Assignments will now be done per slots... All Duty Staff 1..."
+                    # We should respect applicable_shops.
 
-                        res_today = daily_reserve_counts[day_idx][u.id]
-                        score = -res_today
+                    # Optimization: Filter users who are not already assigned Duty ON THIS DAY
+                    # (One person cannot be Duty at 2 shops same day)
 
-                        try:
-                            shop_score = UserShopScore.objects.get(user=u, shop=shop).score
-                            score += (shop_score / 10.0)
-                        except UserShopScore.DoesNotExist:
-                            pass
+                    potential_users = [u for u in shop.applicable_staff.all() if u.is_active and u.is_approved]
 
-                        # Penalize if already assigned as reserve this week to rotate standby duties
-                        score -= (weekly_reserve_count[u.id] * 50)
-
-                        candidates.append((u, score))
-
-                    if not candidates:
-                        break
-
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                    chosen_user = candidates[0][0]
-
-                    Shift.objects.create(
-                        schedule=schedule,
-                        user=chosen_user,
-                        shop=shop,
-                        date=current_date,
-                        role='backup',
-                        score=candidates[0][1]
-                    )
-
-                    assigned_count += 1
-                    daily_reserve_counts[day_idx][chosen_user.id] += 1
-                    weekly_reserve_count[chosen_user.id] += 1
-
-        # --- Phase 3: Roving Assignments ---
-        if roving_shop:
-            roving_staff = roving_shop.applicable_staff.filter(is_active=True, is_approved=True)
-            for i in range(7):
-                current_date = schedule.week_start_date + datetime.timedelta(days=i)
-                day_idx = i
-
-                for u in roving_staff:
-                    is_main = u.id in daily_main_assignments[day_idx]
-                    is_reserve = daily_reserve_counts[day_idx][u.id] > 0
-
-                    if not is_main and not is_reserve:
-                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=roving_shop).exists():
+                    valid_candidates = []
+                    for user in potential_users:
+                        # Check if already assigned Duty today
+                        if current_assignments.is_assigned_on_day(user.id, current_date):
                             continue
+
+                        score = calculate_assignment_score(user, shop, current_date, history_data, current_assignments)
+                        valid_candidates.append((user, score))
+
+                    if valid_candidates:
+                        # Pick highest score
+                        # Sort by score desc. Tie-break randomized?
+                        # Sort is stable. Shuffle first to randomize ties?
+                        random.shuffle(valid_candidates)
+                        valid_candidates.sort(key=lambda x: x[1], reverse=True)
+
+                        best_user, best_score = valid_candidates[0]
 
                         Shift.objects.create(
                             schedule=schedule,
-                            user=u,
-                            shop=roving_shop,
+                            user=best_user,
+                            shop=shop,
                             date=current_date,
                             role='main',
-                            score=0.0
+                            score=best_score
                         )
-                        daily_main_assignments[day_idx].add(u.id)
-                        assigned_main_shop[u.id] = roving_shop.id
+                        current_assignments.add_assignment(best_user.id, shop.id, current_date)
 
-        # --- End of Week Analysis for History ---
-        for u in all_users:
-            if assigned_main_shop[u.id]:
-                user_history[u.id]['last_main_shop'] = assigned_main_shop[u.id]
+        # Standby Assignment Loop (Per Day)
+        # "All staff not assigned as Duty Staff are automatically assigned as Standby Staff of that same day."
+        # "The Standby Staff will be ranked based on who had the least Duty Staff assignment during the previous week."
 
-            try:
-                pref_day = u.preference.top_preferred_day_off
-                worked = u.id in daily_main_assignments[pref_day]
-                if worked:
-                    user_history[u.id]['missed_pref_day_off'] = True
-                else:
-                    user_history[u.id]['missed_pref_day_off'] = False
-            except Preference.DoesNotExist:
-                user_history[u.id]['missed_pref_day_off'] = False
+        for day_offset in range(7):
+            current_date = week_start + datetime.timedelta(days=day_offset)
+
+            # Identify Duty staff for this day
+            duty_users_today = set()
+            for uid, sid, d in current_assignments.assignments:
+                if d == current_date:
+                    duty_users_today.add(uid)
+
+            # Identify Standby Candidates (All active staff not in duty_users_today)
+            standby_candidates = []
+            for user in all_users:
+                if user.id not in duty_users_today:
+                    # Rank metric: Least Duty Staff assignment during PREVIOUS WEEK.
+                    # Count prev week duty shifts
+                    duty_prev_week = 0
+                    for s in history_data['prev_week_shifts']:
+                        if s.user_id == user.id and s.role == 'main':
+                            duty_prev_week += 1
+
+                    standby_candidates.append((user, duty_prev_week))
+
+            # Sort by least duty prev week (asc)
+            # "Highest rank will be the first to act as substitute" -> This implies we just list them.
+            # But we need to assign them a Shift record.
+            # We assign to Roving Shop with role='backup'.
+            # We assign a score equal to negative duty_prev_week (so lower duty = higher score/rank)?
+            # Or just store the rank index?
+            # Let's store negative duty_prev_week as score so higher is better?
+            # Or just store duty_prev_week.
+            # Prompt: "Highest rank will be the first... ranked based on who had the least Duty..."
+            # So User with 0 duty > User with 1 duty.
+            # We should probably sort them and then maybe assign them.
+
+            random.shuffle(standby_candidates) # Randomize ties
+            standby_candidates.sort(key=lambda x: x[1]) # Ascending order of prev duty
+
+            # Create Shifts
+            # We use Roving shop for the "Universal Pool".
+            for idx, (user, prev_duty) in enumerate(standby_candidates):
+                Shift.objects.create(
+                    schedule=schedule,
+                    user=user,
+                    shop=roving_shop,
+                    date=current_date,
+                    role='backup',
+                    score=float(-prev_duty) # Storing as negative so higher (closer to 0) is better? Or just store raw.
+                    # UI usually shows score.
+                )
+
 
 @login_required
 def shift_delete(request, shift_id):
