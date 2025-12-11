@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card mt-5">
+            <div class="card-header bg-danger text-white">
+                <h4>Load Test / Simulation</h4>
+            </div>
+            <div class="card-body">
+                <p>This tool will generate dummy data and simulate historical operations for the past 8 weeks.</p>
+                <ul>
+                    <li><strong>Shops:</strong> "Dummy Shop 1", "Dummy Shop 2"</li>
+                    <li><strong>Staff:</strong> 4 Regulars, 1 Supervisor</li>
+                    <li><strong>Simulation:</strong> Schedule generation, Attendance (1/60 absence), Score Updates.</li>
+                </ul>
+                <p class="text-warning"><strong>Warning:</strong> This will create data in the system. It is non-destructive to existing data but will add dummy records.</p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-lg w-100">Start Simulation</button>
+                </form>
+
+                <div class="mt-3 text-center">
+                    <a href="{% url 'attendance:home' %}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

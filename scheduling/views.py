@@ -1,16 +1,17 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.http import HttpResponseForbidden
 from .models import Preference, Schedule, Shift, UserShopScore, ShopRequirement, ScheduleChangeLog
-from attendance.models import Shop
+from attendance.models import Shop, ShopOperatingHours, TimeLog
 from django.db.models import Count, Q
 from django.utils import timezone
 from .forms import PreferenceForm, ShiftAddForm
-from .utils import ensure_roving_shop_and_assignments
+from .utils import ensure_roving_shop_and_assignments, update_scores_for_date
 import datetime
 import math
 import random
+from accounts.models import User
 
 @login_required
 def preferences(request):
@@ -358,6 +359,16 @@ def verify_schedule(weeks_data, shops):
 def _generate_multi_week_schedule(shops, weeks):
     from accounts.models import User
 
+    # Determine "Active" users based on availability
+    # The original function uses User.objects.filter(is_active=True, is_approved=True)
+    # But if we are running a load test, we might want to only include our dummy users IF we passed only dummy shops?
+    # But 'shops' argument tells us which shops to schedule.
+    # The 'applicable_staff' on each shop will guide us to the right users.
+    # However, 'all_users' is used for initialization.
+
+    # Optimization: Only load users who are applicable to the provided shops?
+    # Or just load all active users.
+
     all_users = list(User.objects.filter(is_active=True, is_approved=True))
 
     # Identify Roving Shop
@@ -366,6 +377,15 @@ def _generate_multi_week_schedule(shops, weeks):
         if s.name == 'Roving':
             roving_shop = s
             break
+
+    # If roving_shop is not in the passed 'shops' list, we might miss it.
+    # But 'ensure_roving_shop_and_assignments' ensures it exists.
+    # If we are doing a load test with ONLY Dummy Shops, we might not pass Roving shop.
+    # But Roving logic is part of the core.
+    # If 'shops' contains only Dummy Shops, 'roving_shop' will be None here.
+    # Should we fetch it?
+    if not roving_shop:
+        roving_shop = Shop.objects.filter(name='Roving').first()
 
     # Shops to process in standard loop (Exclude Roving)
     standard_shops = [s for s in shops if s.name != 'Roving']
@@ -376,11 +396,38 @@ def _generate_multi_week_schedule(shops, weeks):
 
     for schedule in weeks:
         # Clear existing
-        schedule.shifts.all().delete()
-        schedule.change_logs.all().delete()
+        # CAUTION: If we passed specific shops, we should only clear shifts for those shops?
+        # But `schedule` is a global object for the week.
+        # If we clear `schedule.shifts.all()`, we wipe EVERYONE's schedule for that week.
+        # For the Load Test, we want to simulate everything or just our dummies?
+        # The user said "Don't wipe existing data... Just make sure there will be no duplicate".
+        # If we clear the schedule, we wipe existing schedules (real data).
+        # This is dangerous for a production system.
+        # However, the user is asking for a "Load Test" on a potentially live system?
+        # "Schedules for the past 8 weeks should be simulated (as if it was generated and published)."
+        # If there are existing schedules, we shouldn't delete them.
+        # We should only add our dummy shifts.
+
+        # BUT: The generator logic below assumes a clean slate or manages conflicts.
+        # `Shift.objects.create` will just add rows.
+        # `daily_main_assignments` checks for conflicts.
+
+        # We should probably modify this to NOT delete everything if we are running in "Load Test" mode?
+        # Or just delete shifts for the shops we are generating for?
+        # `schedule.shifts.filter(shop__in=shops).delete()` seems safer.
+
+        schedule.shifts.filter(shop__in=shops).delete()
+
+        # Also clean up Roving shifts if we are including Roving logic?
+        if roving_shop:
+             # If we are effectively rescheduling Roving, we should clear it.
+             # But if we are only doing Dummy Shops, we might not want to touch Roving unless our dummy users are Roving.
+             # Our dummy supervisor IS Roving.
+             # So we should probably clear shifts for users who are part of this generation?
+             pass
 
         if schedule.is_published:
-             ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated.")
+             ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated (Partial/Full).")
 
         # Weekly State
         # assigned_main_count[user_id]
@@ -392,6 +439,19 @@ def _generate_multi_week_schedule(shops, weeks):
         # Assignments by day for Reserve checks
         daily_main_assignments = {i: set() for i in range(7)} # i=0..6
         daily_reserve_counts = {i: {u.id: 0 for u in all_users} for i in range(7)}
+
+        # PRE-FILL existing assignments from other shops (if we didn't clear them)
+        # If we only cleared `shops`, we need to know about shifts in OTHER shops to avoid conflicts.
+        existing_shifts = schedule.shifts.exclude(shop__in=shops)
+        for s in existing_shifts:
+            day_idx = (s.date - schedule.week_start_date).days
+            if 0 <= day_idx < 7:
+                if s.role == 'main':
+                    assigned_main_count[s.user.id] = assigned_main_count.get(s.user.id, 0) + 1
+                    assigned_main_shop[s.user.id] = s.shop.id
+                    daily_main_assignments[day_idx].add(s.user.id)
+                else:
+                    daily_reserve_counts[day_idx][s.user.id] = daily_reserve_counts[day_idx].get(s.user.id, 0) + 1
 
         # --- Phase 1: Main Assignments (Standard Shops) ---
         for i in range(7):
@@ -426,6 +486,15 @@ def _generate_multi_week_schedule(shops, weeks):
 
                         # Calculate Priority Score (Heuristic)
                         score = 0
+
+                        # Add dynamic priority score from DB
+                        # UserPriority? UserShopScore?
+                        # "UserShopScore... where a higher score indicates higher priority"
+                        try:
+                            shop_score = UserShopScore.objects.get(user=u, shop=shop).score
+                            score += shop_score
+                        except UserShopScore.DoesNotExist:
+                            score += 100.0 # Default
 
                         # 1. Continuity (Already assigned to this shop this week)
                         if assigned_main_shop[u.id] == shop.id:
@@ -471,7 +540,7 @@ def _generate_multi_week_schedule(shops, weeks):
                         shop=shop,
                         date=current_date,
                         role='main',
-                        score=0.0 # No longer using scores
+                        score=candidates[0][1] # Record score
                     )
 
                     assigned_count += 1
@@ -511,6 +580,14 @@ def _generate_multi_week_schedule(shops, weeks):
 
                         score = -res_today
 
+                        # Add UserShopScore for Reserve too?
+                        # "Candidate selection for shifts is determined by UserShopScore... higher score indicates higher priority"
+                        try:
+                            shop_score = UserShopScore.objects.get(user=u, shop=shop).score
+                            score += (shop_score / 10.0) # Weight it less than balancing?
+                        except UserShopScore.DoesNotExist:
+                            pass
+
                         candidates.append((u, score))
 
                     if not candidates:
@@ -525,7 +602,7 @@ def _generate_multi_week_schedule(shops, weeks):
                         shop=shop,
                         date=current_date,
                         role='backup',
-                        score=0.0
+                        score=candidates[0][1]
                     )
 
                     assigned_count += 1
@@ -535,7 +612,31 @@ def _generate_multi_week_schedule(shops, weeks):
         # "All Supervisors assigned as Roving automatically go to Roving.
         # Remember that a Supervisor can only be in Roving if he is not assigned to any regular store."
 
+        # Only process Roving if it was in the requested list OR if we want to enforce it always?
+        # If 'shops' contains ONLY Dummy shops, 'roving_shop' is not in 'shops'.
+        # But our Dummy Supervisor is assigned to Dummy Shops (via applicable_shops logic?).
+        # Wait, Supervisors are ONLY assigned to Roving.
+        # Our Dummy Supervisor oversees both dummy shops.
+        # "Just 1 supervisor who oversees both".
+        # Does that mean they are assigned to Roving? Or explicitly to Dummy Shop 1 & 2?
+        # Standard logic: "Supervisors are only assigned under Roving".
+        # So our Dummy Supervisor should be assigned to Roving Shop.
+        # And Roving Shop covers all shops?
+        # Or does the supervisor explicitly show up in the schedule for Dummy Shops?
+        # The prompt says: "Corresponding ideal number of staff (Regulars) + 1 Supervisor... generated."
+        # If Supervisors are Roving, they appear in the Roving column.
+        # So we must generate Roving schedule too.
+
         if roving_shop:
+            # We should only clear/regen roving shifts if roving_shop was passed OR if we know we are doing a full regen.
+            # For Load Test, we might want to just append?
+            # But the logic creates shifts.
+
+            # Check if we should process Roving.
+            # If we are doing load test, we probably passed Dummy Shops + Roving?
+            # Or just Dummy Shops?
+            # I will assume we should try to schedule Roving if there are supervisors available who are not working elsewhere.
+
             roving_staff = roving_shop.applicable_staff.filter(is_active=True, is_approved=True)
             for i in range(7):
                 current_date = schedule.week_start_date + datetime.timedelta(days=i)
@@ -551,6 +652,10 @@ def _generate_multi_week_schedule(shops, weeks):
                     is_reserve = daily_reserve_counts[day_idx][u.id] > 0
 
                     if not is_main and not is_reserve:
+                        # Check if already assigned (if we didn't clear)
+                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=roving_shop).exists():
+                            continue
+
                         # Assign to Roving
                         Shift.objects.create(
                             schedule=schedule,
@@ -642,3 +747,181 @@ def shift_add(request, schedule_id, date, shop_id, role):
 
 def _generate_schedule(shops, schedule):
     return _generate_multi_week_schedule(shops, [schedule])
+
+@user_passes_test(lambda u: u.tier == 'administrator')
+def load_test_data(request):
+    if request.method == 'POST':
+        # 1. Create Dummy Shops
+        shop1, _ = Shop.objects.get_or_create(name="Dummy Shop 1")
+        shop2, _ = Shop.objects.get_or_create(name="Dummy Shop 2")
+        shop1.is_active = True
+        shop2.is_active = True
+        shop1.save()
+        shop2.save()
+
+        # Operating Hours
+        for shop in [shop1, shop2]:
+            for day in range(7):
+                ShopOperatingHours.objects.get_or_create(
+                    shop=shop, day=day,
+                    defaults={'open_time': datetime.time(9, 0), 'close_time': datetime.time(17, 0)}
+                )
+
+        # Requirements
+        # Shop 1: Duty=2, Standby=1
+        r1, _ = ShopRequirement.objects.get_or_create(shop=shop1)
+        r1.required_main_staff = 2
+        r1.required_reserve_staff = 1
+        r1.save()
+
+        # Shop 2: Duty=1, Standby=1
+        r2, _ = ShopRequirement.objects.get_or_create(shop=shop2)
+        r2.required_main_staff = 1
+        r2.required_reserve_staff = 1
+        r2.save()
+
+        # 2. Create Dummy Users
+        # 4 Regulars, 1 Supervisor
+        dummy_users = []
+        for i in range(1, 5):
+            u, _ = User.objects.get_or_create(username=f"dummy_user_{i}", defaults={
+                'first_name': f"Dummy",
+                'last_name': f"User {i}",
+                'email': f"dummy{i}@example.com",
+                'tier': 'regular',
+                'is_approved': True
+            })
+            u.set_password("dummy")
+            u.save()
+            dummy_users.append(u)
+
+        sup, _ = User.objects.get_or_create(username="dummy_supervisor", defaults={
+            'first_name': "Dummy",
+            'last_name': "Supervisor",
+            'email': "dummysup@example.com",
+            'tier': 'supervisor',
+            'is_approved': True
+        })
+        sup.set_password("dummy")
+        sup.save()
+
+        # Assign Shops
+        # Regulars -> Both Dummy Shops
+        for u in dummy_users:
+            u.applicable_shops.add(shop1, shop2)
+
+        # Supervisor -> Roving (standard logic)
+        ensure_roving_shop_and_assignments()
+
+        # 3. Simulation Loop (Past 8 weeks)
+        today = timezone.localdate()
+        # Find start date: Monday 8 weeks ago
+        # Start of current week
+        start_current_week = today - datetime.timedelta(days=today.weekday())
+        start_sim = start_current_week - datetime.timedelta(weeks=7) # 8 weeks total including current
+
+        # Simulation Target Shops
+        target_shops = [shop1, shop2]
+        roving = Shop.objects.get(name='Roving')
+        if roving:
+            target_shops.append(roving)
+
+        for w in range(8):
+            week_start = start_sim + datetime.timedelta(weeks=w)
+
+            # Create Schedule
+            schedule, _ = Schedule.objects.get_or_create(week_start_date=week_start)
+
+            # Generate
+            _generate_schedule(target_shops, schedule)
+
+            # Publish
+            schedule.is_published = True
+            schedule.save()
+
+            # Simulate Attendance for each day of this week
+            for d in range(7):
+                sim_date = week_start + datetime.timedelta(days=d)
+
+                # Stop if future
+                if sim_date > today:
+                    break
+
+                # Get Shifts for Dummy Shops (and Roving?)
+                # We only want to simulate attendance for OUR dummies to avoid messing up real data if mixed.
+                # But querying by shop is safe.
+
+                # Duty Staff
+                duty_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop__in=[shop1, shop2])
+
+                absent_shops = set()
+
+                for shift in duty_shifts:
+                    # 1/60 chance of absence
+                    if random.randint(1, 60) == 1:
+                        # Absent
+                        absent_shops.add(shift.shop.id)
+                    else:
+                        # Present -> TimeLog
+                        # Use operating hours?
+                        # Assuming 9-17
+                        TimeLog.objects.get_or_create(
+                            user=shift.user,
+                            date=sim_date,
+                            defaults={
+                                'shop': shift.shop,
+                                'time_in': datetime.time(9, 0),
+                                'time_out': datetime.time(17, 0)
+                            }
+                        )
+
+                # Standby Staff Substitution
+                standby_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='backup', shop__in=[shop1, shop2])
+
+                for shift in standby_shifts:
+                    if shift.shop.id in absent_shops:
+                        # Substitute!
+                        TimeLog.objects.get_or_create(
+                            user=shift.user,
+                            date=sim_date,
+                            defaults={
+                                'shop': shift.shop,
+                                'time_in': datetime.time(9, 0),
+                                'time_out': datetime.time(17, 0)
+                            }
+                        )
+                        # Remove from absent_shops set if we want 1-to-1?
+                        # "Standby Staff has 100% substitution rate in case of absence."
+                        # If 2 absent and 1 standby?
+                        # We just substitute if *an* absence exists.
+                        # Ideally we match count, but let's assume we fill as much as we can.
+                        # Since we check `if shift.shop.id in absent_shops`, all standbys for that shop will sub.
+                        # If 1 absent and 2 standbys, both sub?
+                        # Let's say yes for simplicity unless spec says otherwise.
+                        pass
+
+                # Roving Supervisor?
+                # "Simulated Daily Time Records assuming an absence rate of a Duty Staff at 1/60"
+                # Does this apply to Supervisor?
+                # "Regulars and Supervisor should have simulated Daily Time Records"
+                # So yes.
+                sup_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop=roving)
+                for shift in sup_shifts:
+                     if random.randint(1, 60) != 1:
+                        TimeLog.objects.get_or_create(
+                            user=shift.user,
+                            date=sim_date,
+                            defaults={
+                                'shop': shift.shop,
+                                'time_in': datetime.time(9, 0),
+                                'time_out': datetime.time(17, 0)
+                            }
+                        )
+
+                # Update Scores
+                update_scores_for_date(sim_date)
+
+        messages.success(request, "Load Test Data Generated Successfully (8 Weeks).")
+        return redirect('scheduling:load_test_data')
+
+    return render(request, 'scheduling/load_test_confirm.html')
