@@ -50,14 +50,22 @@
                                 <tr>
                                     <th>Date</th>
                                     {% for shop in shops %}
-                                        <th colspan="2">{{ shop.name }}</th>
+                                        {% if shop.name == 'Roving' %}
+                                            <th>{{ shop.name }}</th>
+                                        {% else %}
+                                            <th colspan="2">{{ shop.name }}</th>
+                                        {% endif %}
                                     {% endfor %}
                                 </tr>
                                 <tr>
                                     <th></th>
                                     {% for shop in shops %}
-                                        <th>Duty</th>
-                                        <th>Standby</th>
+                                        {% if shop.name == 'Roving' %}
+                                            <th>Duty</th>
+                                        {% else %}
+                                            <th>Duty</th>
+                                            <th>Standby</th>
+                                        {% endif %}
                                     {% endfor %}
                                 </tr>
                             </thead>
@@ -82,6 +90,7 @@
                                             {% endif %}
                                         </td>
                                         <!-- Standby Staff -->
+                                        {% if shop.name != 'Roving' %}
                                         <td>
                                             {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
                                                 <div class="badge bg-secondary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
@@ -95,6 +104,7 @@
                                                 <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'backup' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
                                             {% endif %}
                                         </td>
+                                        {% endif %}
                                     {% endfor %}
                                 </tr>
                                 {% endfor %}

@@ -148,6 +148,8 @@ def generator(request):
     total_main_slots = 0
     daily_main_total = 0
     for shop in shops:
+        if shop.name == 'Roving':
+            continue
         try:
             req_main = shop.requirement.required_main_staff
         except ShopRequirement.DoesNotExist:
@@ -205,6 +207,9 @@ def verify_schedule(weeks_data, shops):
         for d, shop_data in matrix.items():
             for s_id, assignments in shop_data.items():
                 shop = shops.get(id=s_id)
+                if shop.name == 'Roving':
+                    continue
+
                 try:
                     req_main = shop.requirement.required_main_staff
                 except ShopRequirement.DoesNotExist:
@@ -215,9 +220,24 @@ def verify_schedule(weeks_data, shops):
 
         # 2. Equal Days Off (Workload Balance)
         # Check variance in total Main shifts per user
+        # Exclude Roving shifts from this calculation?
+        # "Roving should not be included in checks related to Requirements Verification Checklist."
+        # This implies we shouldn't fail if Roving staff have weird workload.
+        # But if we check GLOBAL variance, Roving staff might skew it.
+        # Let's filter out users who are primarily assigned to Roving?
+        # Or just filter out Roving shifts from the count.
+
         main_counts = []
         for u_id, u_shifts in user_shifts.items():
-            main_c = len([s for s in u_shifts if s.role == 'main'])
+            # Count only NON-Roving shifts?
+            non_roving_shifts = [s for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving']
+            # If user has NO non-roving shifts, they might be a Roving Supervisor.
+            # Should we include them with 0 count? That would break variance.
+            # We should probably exclude users who ONLY have Roving shifts or NO shifts.
+            if not non_roving_shifts:
+                continue
+
+            main_c = len(non_roving_shifts)
             main_counts.append(main_c)
 
         if main_counts:
@@ -231,6 +251,9 @@ def verify_schedule(weeks_data, shops):
         for d, shop_data in matrix.items():
             for s_id, assignments in shop_data.items():
                 shop = shops.get(id=s_id)
+                if shop.name == 'Roving':
+                    continue
+
                 try:
                     req_res = shop.requirement.required_reserve_staff
                 except ShopRequirement.DoesNotExist:
@@ -255,7 +278,10 @@ def verify_schedule(weeks_data, shops):
         # 5. Same Shop for rest of week
         # Check if user switches shops within the week
         for u_id, u_shifts in user_shifts.items():
-            shop_ids = set(s.shop.id for s in u_shifts if s.role == 'main')
+            # Filter out Roving shifts?
+            # If a user switches from Regular to Roving, is that bad?
+            # Roving logic is separate. Let's exclude Roving shops from this set.
+            shop_ids = set(s.shop.id for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving')
             if len(shop_ids) > 1:
                 results['cond5'] = False
 
@@ -266,8 +292,8 @@ def verify_schedule(weeks_data, shops):
             w1_shifts = weeks_data[i]['schedule'].shifts.filter(role='main')
             w2_shifts = weeks_data[i+1]['schedule'].shifts.filter(role='main')
 
-            w1_map = {s.user.id: s.shop.id for s in w1_shifts} # Last shop assigned
-            w2_map = {s.user.id: s.shop.id for s in w2_shifts} # First shop assigned?
+            w1_map = {s.user.id: s.shop.id for s in w1_shifts if s.shop.name != 'Roving'} # Last shop assigned
+            w2_map = {s.user.id: s.shop.id for s in w2_shifts if s.shop.name != 'Roving'} # First shop assigned?
 
             # This is a rough check. "Cycled to a different shop".
             # Check if user assigned to Shop A in W1 is assigned to Shop A in W2
@@ -281,6 +307,16 @@ def _generate_multi_week_schedule(shops, weeks):
     from accounts.models import User
 
     all_users = list(User.objects.filter(is_active=True, is_approved=True))
+
+    # Identify Roving Shop
+    roving_shop = None
+    for s in shops:
+        if s.name == 'Roving':
+            roving_shop = s
+            break
+
+    # Shops to process in standard loop (Exclude Roving)
+    standard_shops = [s for s in shops if s.name != 'Roving']
 
     # State tracking across weeks
     # user_history[user_id] = { 'last_main_shop': None, 'missed_pref_day_off_last_week': False }
@@ -305,22 +341,12 @@ def _generate_multi_week_schedule(shops, weeks):
         daily_main_assignments = {i: set() for i in range(7)} # i=0..6
         daily_reserve_counts = {i: {u.id: 0 for u in all_users} for i in range(7)}
 
-        # --- Phase 1: Main Assignments ---
-        # Prioritize shops? Maybe Roving first? Or random?
-        # Iterate Days -> Shops
-
-        # To support "Same shop for rest of week", we should assign user to Same Shop if they already have one.
-
+        # --- Phase 1: Main Assignments (Standard Shops) ---
         for i in range(7):
             current_date = schedule.week_start_date + datetime.timedelta(days=i)
             day_idx = i
 
-            # Shuffle shops to avoid bias?
-            # Or prioritize Roving? "Supervisors are only assigned under Roving".
-            # It's better to process shops with specific constraints first (like Roving which has limited pool)
-            # But "Roving" is just another shop now with restricted `applicable_staff`.
-
-            sorted_shops = list(shops)
+            sorted_shops = list(standard_shops)
             # Maybe sort by requirement descending?
 
             for shop in sorted_shops:
@@ -401,12 +427,12 @@ def _generate_multi_week_schedule(shops, weeks):
                     assigned_main_shop[chosen_user.id] = shop.id
                     daily_main_assignments[day_idx].add(chosen_user.id)
 
-        # --- Phase 2: Reserve Assignments ---
+        # --- Phase 2: Reserve Assignments (Standard Shops) ---
         for i in range(7):
             current_date = schedule.week_start_date + datetime.timedelta(days=i)
             day_idx = i
 
-            for shop in sorted_shops:
+            for shop in standard_shops:
                 try:
                     req_res = shop.requirement.required_reserve_staff
                 except ShopRequirement.DoesNotExist:
@@ -452,6 +478,40 @@ def _generate_multi_week_schedule(shops, weeks):
 
                     assigned_count += 1
                     daily_reserve_counts[day_idx][chosen_user.id] += 1
+
+        # --- Phase 3: Roving Assignments ---
+        # "All Supervisors assigned as Roving automatically go to Roving.
+        # Remember that a Supervisor can only be in Roving if he is not assigned to any regular store."
+
+        if roving_shop:
+            roving_staff = roving_shop.applicable_staff.filter(is_active=True, is_approved=True)
+            for i in range(7):
+                current_date = schedule.week_start_date + datetime.timedelta(days=i)
+                day_idx = i
+
+                for u in roving_staff:
+                    # Check if assigned to any regular shop today (Main or Standby)
+                    # We check:
+                    # 1. Is user in daily_main_assignments? (Covers Main)
+                    # 2. Is user in daily_reserve_counts > 0? (Covers Standby)
+
+                    is_main = u.id in daily_main_assignments[day_idx]
+                    is_reserve = daily_reserve_counts[day_idx][u.id] > 0
+
+                    if not is_main and not is_reserve:
+                        # Assign to Roving
+                        Shift.objects.create(
+                            schedule=schedule,
+                            user=u,
+                            shop=roving_shop,
+                            date=current_date,
+                            role='main',
+                            score=0.0
+                        )
+                        # No need to update assigned_main_count/shop unless we want History tracking to work for them?
+                        # It's better to update so they don't get picked for other things if we added more logic later.
+                        daily_main_assignments[day_idx].add(u.id)
+                        assigned_main_shop[u.id] = roving_shop.id
 
         # --- End of Week Analysis for History ---
         for u in all_users:
