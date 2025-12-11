@@ -12,4 +12,5 @@ urlpatterns = [
     path('history/', views.schedule_history_list, name='schedule_history_list'),
     path('history/<int:schedule_id>/', views.schedule_history_detail, name='schedule_history_detail'),
     path('load-test/', views.load_test_data, name='load_test_data'),
+    path('reset-data/', views.reset_data, name='reset_data'),
 ]
