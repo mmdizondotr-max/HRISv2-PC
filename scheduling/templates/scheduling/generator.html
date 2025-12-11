@@ -9,7 +9,7 @@
         {% if ideal_staff_count %}
             <div class="alert alert-info">
                 <strong>Ideal number of staff required: {{ ideal_staff_count }}</strong>
-                <small>(Estimated minimum to meet requirements with at least 1 day off per staff. Formula: Max( ceil(Total_Main_Weekly / 6), Daily_Main_Max + 1 ))</small>
+                <small>(Estimated minimum to meet requirements with at least 1 day off per staff. Formula: Max( ceil(Total_Duty_Weekly / 6), Daily_Duty_Max + 1 ))</small>
             </div>
         {% endif %}
 
@@ -56,8 +56,8 @@
                                 <tr>
                                     <th></th>
                                     {% for shop in shops %}
-                                        <th>Main</th>
-                                        <th>Reserve</th>
+                                        <th>Duty</th>
+                                        <th>Standby</th>
                                     {% endfor %}
                                 </tr>
                             </thead>
@@ -66,7 +66,7 @@
                                 <tr>
                                     <td class="fw-bold">{{ date|date:"D, M d" }}</td>
                                     {% for shop in shops %}
-                                        <!-- Main Staff -->
+                                        <!-- Duty Staff -->
                                         <td>
                                             {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
                                                 <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
@@ -81,7 +81,7 @@
                                                 <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
                                             {% endif %}
                                         </td>
-                                        <!-- Reserve Staff -->
+                                        <!-- Standby Staff -->
                                         <td>
                                             {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
                                                 <div class="badge bg-secondary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
@@ -113,7 +113,7 @@
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item">
                             {% if checklist.cond1 %}✅{% else %}❌{% endif %}
-                            <strong>1. Each Shop must have at least a Main Staff (Filled).</strong>
+                            <strong>1. Each Shop must have at least a Duty Staff (Filled).</strong>
                         </li>
                         <li class="list-group-item">
                             {% if checklist.cond2 %}✅{% else %}⚠️{% endif %}
@@ -121,7 +121,7 @@
                         </li>
                         <li class="list-group-item">
                             {% if checklist.cond3 %}✅{% else %}❌{% endif %}
-                            <strong>3. Reserve Staff filled & balanced among Day-Off staff.</strong>
+                            <strong>3. Standby Staff filled & balanced among Day-Off staff.</strong>
                         </li>
                         <li class="list-group-item">
                             {% if checklist.cond4 %}✅{% else %}⚠️{% endif %}

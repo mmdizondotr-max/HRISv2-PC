@@ -184,6 +184,11 @@ def shop_delete(request, shop_id):
         return HttpResponseForbidden("Unauthorized")
 
     shop = get_object_or_404(Shop, id=shop_id)
+
+    if shop.name == 'Roving':
+        messages.error(request, "The 'Roving' shop cannot be deleted.")
+        return redirect('attendance:shop_list')
+
     if request.method == 'POST':
         shop.delete()
         messages.success(request, "Shop deleted.")

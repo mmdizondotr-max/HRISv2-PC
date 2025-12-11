@@ -42,8 +42,8 @@ class ScheduleChangeLog(models.Model):
 
 class Shift(models.Model):
     ROLE_CHOICES = (
-        ('main', 'Main Staff'),
-        ('backup', 'Backup Staff'),
+        ('main', 'Duty'),
+        ('backup', 'Standby'),
     )
 
     schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE, related_name='shifts')
@@ -92,4 +92,4 @@ class ShopRequirement(models.Model):
     required_reserve_staff = models.PositiveIntegerField(default=0)
 
     def __str__(self):
-        return f"{self.shop}: Main {self.required_main_staff}, Reserve {self.required_reserve_staff}"
+        return f"{self.shop}: Duty {self.required_main_staff}, Standby {self.required_reserve_staff}"

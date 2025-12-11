@@ -14,7 +14,7 @@
                         <th>Name</th>
                         <th>Status</th>
                         <th>Supervisors</th>
-                        <th>Staff Req (Main/Res)</th>
+                        <th>Staff Req (Duty/Standby)</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -45,7 +45,11 @@
                         </td>
                         <td>
                             <a href="{% url 'attendance:shop_edit' shop.id %}" class="btn btn-sm btn-primary">Edit</a>
-                            <a href="{% url 'attendance:shop_delete' shop.id %}" class="btn btn-sm btn-danger">Delete</a>
+                            {% if shop.name != 'Roving' %}
+                                <a href="{% url 'attendance:shop_delete' shop.id %}" class="btn btn-sm btn-danger">Delete</a>
+                            {% else %}
+                                <button class="btn btn-sm btn-danger" disabled title="Roving shop cannot be deleted">Delete</button>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
