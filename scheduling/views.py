@@ -2,8 +2,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.http import HttpResponseForbidden
-from .models import Preference, Schedule, Shift, UserShopScore, ShopRequirement, ScheduleChangeLog
+from .models import Preference, Schedule, Shift, UserShopScore, ShopRequirement, ScheduleChangeLog, UserPriority
 from attendance.models import Shop, ShopOperatingHours, TimeLog
+from accounts.models import AccountActionLog, PasswordResetRequest
 from django.db.models import Count, Q
 from django.utils import timezone
 from .forms import PreferenceForm, ShiftAddForm
@@ -82,14 +83,6 @@ def schedule_history_list(request):
     today = timezone.localdate()
     start_of_current_week = today - datetime.timedelta(days=today.weekday())
 
-    # Show schedules starting BEFORE next week?
-    # Usually History means past. So strictly less than next week?
-    # Or everything published?
-    # Requirement: "Published Schedule History" showing all previously published schedule.
-    # Including the current one?
-    # "showing all previously published schedule". Usually implies everything from the past.
-    # Let's show everything that is published.
-
     schedules = Schedule.objects.filter(is_published=True).order_by('-week_start_date')
 
     return render(request, 'scheduling/schedule_history_list.html', {'schedules': schedules})
@@ -102,7 +95,7 @@ def schedule_history_detail(request, schedule_id):
     schedule = get_object_or_404(Schedule, id=schedule_id, is_published=True)
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
-    shops = Shop.objects.all() # Show all shops even inactive ones for history? Maybe safer to show active or all.
+    shops = Shop.objects.all()
 
     matrix = {}
     for d in dates:
@@ -242,9 +235,6 @@ def verify_schedule(weeks_data, shops):
         'cond6': True, # Cycle to different shop next week
     }
 
-    # Implementation of checks...
-    # This runs on the generated data
-
     for week in weeks_data:
         schedule = week['schedule']
         matrix = week['matrix']
@@ -272,21 +262,10 @@ def verify_schedule(weeks_data, shops):
                     results['cond1'] = False # Failed coverage
 
         # 2. Equal Days Off (Workload Balance)
-        # Check variance in total Main shifts per user
-        # Exclude Roving shifts from this calculation?
-        # "Roving should not be included in checks related to Requirements Verification Checklist."
-        # This implies we shouldn't fail if Roving staff have weird workload.
-        # But if we check GLOBAL variance, Roving staff might skew it.
-        # Let's filter out users who are primarily assigned to Roving?
-        # Or just filter out Roving shifts from the count.
-
         main_counts = []
         for u_id, u_shifts in user_shifts.items():
             # Count only NON-Roving shifts?
             non_roving_shifts = [s for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving']
-            # If user has NO non-roving shifts, they might be a Roving Supervisor.
-            # Should we include them with 0 count? That would break variance.
-            # We should probably exclude users who ONLY have Roving shifts or NO shifts.
             if not non_roving_shifts:
                 continue
 
@@ -298,9 +277,6 @@ def verify_schedule(weeks_data, shops):
                 results['cond2'] = False # Variance > 1 implies inequality beyond remainder
 
         # 3. Reserve Staff Coverage & Balance
-        # Check reserve slots filled
-        # Check reserve assignment balance (Equal numbers... per day)
-        # This is hard to check perfectly on aggregate, but let's check basic filling.
         for d, shop_data in matrix.items():
             for s_id, assignments in shop_data.items():
                 shop = shops.get(id=s_id)
@@ -315,13 +291,11 @@ def verify_schedule(weeks_data, shops):
                     results['cond3'] = False
 
         # 4. Preferred Day Off
-        # Need access to user prefs.
         for u_id, u_shifts in user_shifts.items():
             if not u_shifts: continue
             user = u_shifts[0].user # Get user object
             try:
                 pref_day = user.preference.top_preferred_day_off
-                # Check if user worked Main on this day
                 worked_main_on_pref = any(s.date.weekday() == pref_day and s.role == 'main' for s in u_shifts)
                 if worked_main_on_pref:
                      results['cond4'] = False
@@ -329,17 +303,12 @@ def verify_schedule(weeks_data, shops):
                 pass
 
         # 5. Same Shop for rest of week
-        # Check if user switches shops within the week
         for u_id, u_shifts in user_shifts.items():
-            # Filter out Roving shifts?
-            # If a user switches from Regular to Roving, is that bad?
-            # Roving logic is separate. Let's exclude Roving shops from this set.
             shop_ids = set(s.shop.id for s in u_shifts if s.role == 'main' and s.shop.name != 'Roving')
             if len(shop_ids) > 1:
                 results['cond5'] = False
 
     # 6. Cycle to different shop next week
-    # Compare Week 1 vs Week 2, etc.
     if len(weeks_data) > 1:
         for i in range(len(weeks_data) - 1):
             w1_shifts = weeks_data[i]['schedule'].shifts.filter(role='main')
@@ -348,8 +317,6 @@ def verify_schedule(weeks_data, shops):
             w1_map = {s.user.id: s.shop.id for s in w1_shifts if s.shop.name != 'Roving'} # Last shop assigned
             w2_map = {s.user.id: s.shop.id for s in w2_shifts if s.shop.name != 'Roving'} # First shop assigned?
 
-            # This is a rough check. "Cycled to a different shop".
-            # Check if user assigned to Shop A in W1 is assigned to Shop A in W2
             for u_id, s1_id in w1_map.items():
                 if u_id in w2_map and w2_map[u_id] == s1_id:
                      results['cond6'] = False
@@ -359,89 +326,32 @@ def verify_schedule(weeks_data, shops):
 def _generate_multi_week_schedule(shops, weeks):
     from accounts.models import User
 
-    # Determine "Active" users based on availability
-    # The original function uses User.objects.filter(is_active=True, is_approved=True)
-    # But if we are running a load test, we might want to only include our dummy users IF we passed only dummy shops?
-    # But 'shops' argument tells us which shops to schedule.
-    # The 'applicable_staff' on each shop will guide us to the right users.
-    # However, 'all_users' is used for initialization.
-
-    # Optimization: Only load users who are applicable to the provided shops?
-    # Or just load all active users.
-
     all_users = list(User.objects.filter(is_active=True, is_approved=True))
 
-    # Identify Roving Shop
     roving_shop = None
     for s in shops:
         if s.name == 'Roving':
             roving_shop = s
             break
 
-    # If roving_shop is not in the passed 'shops' list, we might miss it.
-    # But 'ensure_roving_shop_and_assignments' ensures it exists.
-    # If we are doing a load test with ONLY Dummy Shops, we might not pass Roving shop.
-    # But Roving logic is part of the core.
-    # If 'shops' contains only Dummy Shops, 'roving_shop' will be None here.
-    # Should we fetch it?
     if not roving_shop:
         roving_shop = Shop.objects.filter(name='Roving').first()
 
-    # Shops to process in standard loop (Exclude Roving)
     standard_shops = [s for s in shops if s.name != 'Roving']
 
-    # State tracking across weeks
-    # user_history[user_id] = { 'last_main_shop': None, 'missed_pref_day_off_last_week': False }
     user_history = {u.id: {'last_main_shop': None, 'missed_pref_day_off': False} for u in all_users}
 
     for schedule in weeks:
-        # Clear existing
-        # CAUTION: If we passed specific shops, we should only clear shifts for those shops?
-        # But `schedule` is a global object for the week.
-        # If we clear `schedule.shifts.all()`, we wipe EVERYONE's schedule for that week.
-        # For the Load Test, we want to simulate everything or just our dummies?
-        # The user said "Don't wipe existing data... Just make sure there will be no duplicate".
-        # If we clear the schedule, we wipe existing schedules (real data).
-        # This is dangerous for a production system.
-        # However, the user is asking for a "Load Test" on a potentially live system?
-        # "Schedules for the past 8 weeks should be simulated (as if it was generated and published)."
-        # If there are existing schedules, we shouldn't delete them.
-        # We should only add our dummy shifts.
-
-        # BUT: The generator logic below assumes a clean slate or manages conflicts.
-        # `Shift.objects.create` will just add rows.
-        # `daily_main_assignments` checks for conflicts.
-
-        # We should probably modify this to NOT delete everything if we are running in "Load Test" mode?
-        # Or just delete shifts for the shops we are generating for?
-        # `schedule.shifts.filter(shop__in=shops).delete()` seems safer.
-
         schedule.shifts.filter(shop__in=shops).delete()
-
-        # Also clean up Roving shifts if we are including Roving logic?
-        if roving_shop:
-             # If we are effectively rescheduling Roving, we should clear it.
-             # But if we are only doing Dummy Shops, we might not want to touch Roving unless our dummy users are Roving.
-             # Our dummy supervisor IS Roving.
-             # So we should probably clear shifts for users who are part of this generation?
-             pass
 
         if schedule.is_published:
              ScheduleChangeLog.objects.create(schedule=schedule, message="Regenerated (Partial/Full).")
 
-        # Weekly State
-        # assigned_main_count[user_id]
         assigned_main_count = {u.id: 0 for u in all_users}
-
-        # assigned_main_shop[user_id] -> ShopID (Enforce single shop per week)
         assigned_main_shop = {u.id: None for u in all_users}
-
-        # Assignments by day for Reserve checks
-        daily_main_assignments = {i: set() for i in range(7)} # i=0..6
+        daily_main_assignments = {i: set() for i in range(7)}
         daily_reserve_counts = {i: {u.id: 0 for u in all_users} for i in range(7)}
 
-        # PRE-FILL existing assignments from other shops (if we didn't clear them)
-        # If we only cleared `shops`, we need to know about shifts in OTHER shops to avoid conflicts.
         existing_shifts = schedule.shifts.exclude(shop__in=shops)
         for s in existing_shifts:
             day_idx = (s.date - schedule.week_start_date).days
@@ -459,7 +369,6 @@ def _generate_multi_week_schedule(shops, weeks):
             day_idx = i
 
             sorted_shops = list(standard_shops)
-            # Maybe sort by requirement descending?
 
             for shop in sorted_shops:
                 try:
@@ -469,69 +378,51 @@ def _generate_multi_week_schedule(shops, weeks):
 
                 assigned_count = 0
                 while assigned_count < req_main:
-                    candidates = []
+                    # Helper to find candidates
+                    def find_candidates(relax_days_limit=False):
+                        candidates = []
+                        for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
+                            if u.id in daily_main_assignments[day_idx]: continue
+                            if assigned_main_shop[u.id] is not None and assigned_main_shop[u.id] != shop.id: continue
 
-                    for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
-                        # Filter: Already Main today?
-                        if u.id in daily_main_assignments[day_idx]:
-                            continue
+                            # Max 6 days check (unless relaxed)
+                            if not relax_days_limit and assigned_main_count[u.id] >= 6: continue
 
-                        # Filter: Assigned to DIFFERENT shop this week?
-                        if assigned_main_shop[u.id] is not None and assigned_main_shop[u.id] != shop.id:
-                            continue
+                            score = 0
+                            try:
+                                shop_score = UserShopScore.objects.get(user=u, shop=shop).score
+                                score += shop_score
+                            except UserShopScore.DoesNotExist:
+                                score += 100.0
 
-                        # Filter: Max 6 days? (Implicit "At least 1 day off")
-                        if assigned_main_count[u.id] >= 6:
-                            continue
+                            if assigned_main_shop[u.id] == shop.id: score += 1000
 
-                        # Calculate Priority Score (Heuristic)
-                        score = 0
+                            try:
+                                pref = u.preference
+                                if pref.top_preferred_day_off == day_idx:
+                                    if user_history[u.id]['missed_pref_day_off']:
+                                        score -= 2000
+                                    else:
+                                        score -= 100
+                            except Preference.DoesNotExist:
+                                pass
 
-                        # Add dynamic priority score from DB
-                        # UserPriority? UserShopScore?
-                        # "UserShopScore... where a higher score indicates higher priority"
-                        try:
-                            shop_score = UserShopScore.objects.get(user=u, shop=shop).score
-                            score += shop_score
-                        except UserShopScore.DoesNotExist:
-                            score += 100.0 # Default
+                            if user_history[u.id]['last_main_shop'] == shop.id: score -= 200
+                            score -= (assigned_main_count[u.id] * 10)
+                            candidates.append((u, score))
+                        return candidates
 
-                        # 1. Continuity (Already assigned to this shop this week)
-                        if assigned_main_shop[u.id] == shop.id:
-                            score += 1000
+                    # 1. Try strict search
+                    candidates = find_candidates(relax_days_limit=False)
 
-                        # 2. Preferred Day Off
-                        # If today is preferred, HUGE Penalty.
-                        # Unless "did not get preferred day off... last week".
-                        try:
-                            pref = u.preference
-                            if pref.top_preferred_day_off == day_idx:
-                                if user_history[u.id]['missed_pref_day_off']:
-                                    # If they missed it last week, we MUST honor it this week.
-                                    # So we want to make it VERY unlikely they are picked.
-                                    # Score should be much LOWER than standard penalty.
-                                    score -= 2000 # Massive penalty to prevent assignment
-                                else:
-                                    score -= 100 # Standard penalty
-                        except Preference.DoesNotExist:
-                            pass
-
-                        # 3. Rotation (Different shop than last week)
-                        if user_history[u.id]['last_main_shop'] == shop.id:
-                            score -= 200 # Penalize repeating shop across weeks
-
-                        # 4. Workload (Equal Days Off) -> Prioritize fewer shifts
-                        score -= (assigned_main_count[u.id] * 10)
-
-                        candidates.append((u, score))
+                    # 2. If no candidates AND we have 0 assigned (insufficient staff), Try relaxed search
+                    if not candidates and assigned_count == 0:
+                        candidates = find_candidates(relax_days_limit=True)
 
                     if not candidates:
                         break
 
-                    # Sort Descending
                     candidates.sort(key=lambda x: x[1], reverse=True)
-
-                    # Pick top
                     chosen_user = candidates[0][0]
 
                     Shift.objects.create(
@@ -540,7 +431,7 @@ def _generate_multi_week_schedule(shops, weeks):
                         shop=shop,
                         date=current_date,
                         role='main',
-                        score=candidates[0][1] # Record score
+                        score=candidates[0][1]
                     )
 
                     assigned_count += 1
@@ -565,26 +456,15 @@ def _generate_multi_week_schedule(shops, weeks):
                 while assigned_count < req_res:
                     candidates = []
                     for u in shop.applicable_staff.filter(is_active=True, is_approved=True):
-                        # Filter: Main today?
-                        if u.id in daily_main_assignments[day_idx]:
-                            continue
+                        if u.id in daily_main_assignments[day_idx]: continue
+                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=shop).exists(): continue
 
-                        # Already reserved at this shop today?
-                        # Check DB? Or in-memory?
-                        if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=shop).exists():
-                            continue
-
-                        # Priority: "Equal numbers of Standby Staff assignment per day"
-                        # Prioritize those with FEWEST reserves TODAY.
                         res_today = daily_reserve_counts[day_idx][u.id]
-
                         score = -res_today
 
-                        # Add UserShopScore for Reserve too?
-                        # "Candidate selection for shifts is determined by UserShopScore... higher score indicates higher priority"
                         try:
                             shop_score = UserShopScore.objects.get(user=u, shop=shop).score
-                            score += (shop_score / 10.0) # Weight it less than balancing?
+                            score += (shop_score / 10.0)
                         except UserShopScore.DoesNotExist:
                             pass
 
@@ -609,54 +489,20 @@ def _generate_multi_week_schedule(shops, weeks):
                     daily_reserve_counts[day_idx][chosen_user.id] += 1
 
         # --- Phase 3: Roving Assignments ---
-        # "All Supervisors assigned as Roving automatically go to Roving.
-        # Remember that a Supervisor can only be in Roving if he is not assigned to any regular store."
-
-        # Only process Roving if it was in the requested list OR if we want to enforce it always?
-        # If 'shops' contains ONLY Dummy shops, 'roving_shop' is not in 'shops'.
-        # But our Dummy Supervisor is assigned to Dummy Shops (via applicable_shops logic?).
-        # Wait, Supervisors are ONLY assigned to Roving.
-        # Our Dummy Supervisor oversees both dummy shops.
-        # "Just 1 supervisor who oversees both".
-        # Does that mean they are assigned to Roving? Or explicitly to Dummy Shop 1 & 2?
-        # Standard logic: "Supervisors are only assigned under Roving".
-        # So our Dummy Supervisor should be assigned to Roving Shop.
-        # And Roving Shop covers all shops?
-        # Or does the supervisor explicitly show up in the schedule for Dummy Shops?
-        # The prompt says: "Corresponding ideal number of staff (Regulars) + 1 Supervisor... generated."
-        # If Supervisors are Roving, they appear in the Roving column.
-        # So we must generate Roving schedule too.
-
         if roving_shop:
-            # We should only clear/regen roving shifts if roving_shop was passed OR if we know we are doing a full regen.
-            # For Load Test, we might want to just append?
-            # But the logic creates shifts.
-
-            # Check if we should process Roving.
-            # If we are doing load test, we probably passed Dummy Shops + Roving?
-            # Or just Dummy Shops?
-            # I will assume we should try to schedule Roving if there are supervisors available who are not working elsewhere.
-
             roving_staff = roving_shop.applicable_staff.filter(is_active=True, is_approved=True)
             for i in range(7):
                 current_date = schedule.week_start_date + datetime.timedelta(days=i)
                 day_idx = i
 
                 for u in roving_staff:
-                    # Check if assigned to any regular shop today (Main or Standby)
-                    # We check:
-                    # 1. Is user in daily_main_assignments? (Covers Main)
-                    # 2. Is user in daily_reserve_counts > 0? (Covers Standby)
-
                     is_main = u.id in daily_main_assignments[day_idx]
                     is_reserve = daily_reserve_counts[day_idx][u.id] > 0
 
                     if not is_main and not is_reserve:
-                        # Check if already assigned (if we didn't clear)
                         if Shift.objects.filter(schedule=schedule, date=current_date, user=u, shop=roving_shop).exists():
                             continue
 
-                        # Assign to Roving
                         Shift.objects.create(
                             schedule=schedule,
                             user=u,
@@ -665,21 +511,16 @@ def _generate_multi_week_schedule(shops, weeks):
                             role='main',
                             score=0.0
                         )
-                        # No need to update assigned_main_count/shop unless we want History tracking to work for them?
-                        # It's better to update so they don't get picked for other things if we added more logic later.
                         daily_main_assignments[day_idx].add(u.id)
                         assigned_main_shop[u.id] = roving_shop.id
 
         # --- End of Week Analysis for History ---
         for u in all_users:
-            # Update last shop
             if assigned_main_shop[u.id]:
                 user_history[u.id]['last_main_shop'] = assigned_main_shop[u.id]
 
-            # Check preferred day off adherence
             try:
                 pref_day = u.preference.top_preferred_day_off
-                # Did they work Main on this day?
                 worked = u.id in daily_main_assignments[pref_day]
                 if worked:
                     user_history[u.id]['missed_pref_day_off'] = True
@@ -748,9 +589,47 @@ def shift_add(request, schedule_id, date, shop_id, role):
 def _generate_schedule(shops, schedule):
     return _generate_multi_week_schedule(shops, [schedule])
 
-@user_passes_test(lambda u: u.tier == 'administrator')
+def reset_system_data(request_user):
+    """
+    Deletes all data except:
+    - Superusers
+    - The 'Roving' Shop
+    - The request_user (to prevent self-lockout)
+    """
+    # 1. Users: Exclude superusers and current user
+    users_to_delete = User.objects.exclude(Q(is_superuser=True) | Q(id=request_user.id))
+    users_to_delete.delete()
+
+    # 2. Shops: Exclude 'Roving'
+    shops_to_delete = Shop.objects.exclude(name='Roving')
+    shops_to_delete.delete()
+
+    # 3. All other operational data
+    Schedule.objects.all().delete()
+    TimeLog.objects.all().delete()
+    AccountActionLog.objects.all().delete()
+    ScheduleChangeLog.objects.all().delete()
+    UserPriority.objects.all().delete()
+    UserShopScore.objects.all().delete()
+    Preference.objects.all().delete()
+    PasswordResetRequest.objects.all().delete()
+
+@user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
+def reset_data(request):
+    if request.method == 'POST':
+        if 'confirm_reset' in request.POST:
+            reset_system_data(request.user)
+            messages.success(request, "All system data has been reset.")
+            return redirect('scheduling:generator')
+
+    return render(request, 'scheduling/reset_confirm.html')
+
+@user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
 def load_test_data(request):
     if request.method == 'POST':
+        # 0. Reset Data first
+        reset_system_data(request.user)
+
         # 1. Create Dummy Shops
         shop1, _ = Shop.objects.get_or_create(name="Dummy Shop 1")
         shop2, _ = Shop.objects.get_or_create(name="Dummy Shop 2")
@@ -782,11 +661,17 @@ def load_test_data(request):
 
         # 2. Create Dummy Users
         # 4 Regulars, 1 Supervisor
+        first_names = ['James', 'John', 'Robert', 'Michael', 'William', 'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth']
+
+        # Select 5 unique names
+        chosen_names = random.sample(first_names, 5)
+
         dummy_users = []
         for i in range(1, 5):
+            fname = chosen_names[i-1]
             u, _ = User.objects.get_or_create(username=f"dummy_user_{i}", defaults={
-                'first_name': f"Dummy",
-                'last_name': f"User {i}",
+                'first_name': fname,
+                'last_name': "Dummy",
                 'email': f"dummy{i}@example.com",
                 'tier': 'regular',
                 'is_approved': True
@@ -795,9 +680,10 @@ def load_test_data(request):
             u.save()
             dummy_users.append(u)
 
+        fname_sup = chosen_names[4]
         sup, _ = User.objects.get_or_create(username="dummy_supervisor", defaults={
-            'first_name': "Dummy",
-            'last_name': "Supervisor",
+            'first_name': fname_sup,
+            'last_name': "Dummy",
             'email': "dummysup@example.com",
             'tier': 'supervisor',
             'is_approved': True
@@ -822,7 +708,7 @@ def load_test_data(request):
 
         # Simulation Target Shops
         target_shops = [shop1, shop2]
-        roving = Shop.objects.get(name='Roving')
+        roving = Shop.objects.filter(name='Roving').first()
         if roving:
             target_shops.append(roving)
 
@@ -846,10 +732,6 @@ def load_test_data(request):
                 # Stop if future
                 if sim_date > today:
                     break
-
-                # Get Shifts for Dummy Shops (and Roving?)
-                # We only want to simulate attendance for OUR dummies to avoid messing up real data if mixed.
-                # But querying by shop is safe.
 
                 # Duty Staff
                 duty_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop__in=[shop1, shop2])
@@ -890,33 +772,21 @@ def load_test_data(request):
                                 'time_out': datetime.time(17, 0)
                             }
                         )
-                        # Remove from absent_shops set if we want 1-to-1?
-                        # "Standby Staff has 100% substitution rate in case of absence."
-                        # If 2 absent and 1 standby?
-                        # We just substitute if *an* absence exists.
-                        # Ideally we match count, but let's assume we fill as much as we can.
-                        # Since we check `if shift.shop.id in absent_shops`, all standbys for that shop will sub.
-                        # If 1 absent and 2 standbys, both sub?
-                        # Let's say yes for simplicity unless spec says otherwise.
-                        pass
 
                 # Roving Supervisor?
-                # "Simulated Daily Time Records assuming an absence rate of a Duty Staff at 1/60"
-                # Does this apply to Supervisor?
-                # "Regulars and Supervisor should have simulated Daily Time Records"
-                # So yes.
-                sup_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop=roving)
-                for shift in sup_shifts:
-                     if random.randint(1, 60) != 1:
-                        TimeLog.objects.get_or_create(
-                            user=shift.user,
-                            date=sim_date,
-                            defaults={
-                                'shop': shift.shop,
-                                'time_in': datetime.time(9, 0),
-                                'time_out': datetime.time(17, 0)
-                            }
-                        )
+                if roving:
+                    sup_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop=roving)
+                    for shift in sup_shifts:
+                         if random.randint(1, 60) != 1:
+                            TimeLog.objects.get_or_create(
+                                user=shift.user,
+                                date=sim_date,
+                                defaults={
+                                    'shop': shift.shop,
+                                    'time_in': datetime.time(9, 0),
+                                    'time_out': datetime.time(17, 0)
+                                }
+                            )
 
                 # Update Scores
                 update_scores_for_date(sim_date)

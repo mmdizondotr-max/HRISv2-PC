@@ -57,6 +57,7 @@
                                     {% if user.tier == 'administrator' or user.is_superuser %}
                                     <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" href="{% url 'scheduling:load_test_data' %}">Load Test</a></li>
+                                    <li><a class="dropdown-item text-danger" href="{% url 'scheduling:reset_data' %}">Reset Data</a></li>
                                     {% endif %}
                                 </ul>
                             </li>

@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h4>Reset All Data</h4>
+                </div>
+                <div class="card-body text-center">
+                    <p class="lead text-danger">
+                        <strong>WARNING: This action is irreversible!</strong>
+                    </p>
+                    <p>
+                        This will delete all Users (except Superusers), Shops (except 'Roving'), Schedules, Shifts, Time Logs, and Logs.
+                    </p>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <a href="{% url 'scheduling:generator' %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" name="confirm_reset" class="btn btn-danger">Confirm Delete All Data</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
