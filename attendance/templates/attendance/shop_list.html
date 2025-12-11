@@ -20,7 +20,7 @@
                 </thead>
                 <tbody>
                     {% for shop in shops %}
-                    <tr>
+                    <tr {% if shop.name == 'Roving' %}class="table-warning"{% endif %}>
                         <td>{{ shop.name }}</td>
                         <td>
                             {% if shop.is_active %}

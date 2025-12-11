@@ -106,6 +106,11 @@ def shop_manage(request, shop_id=None):
     # Formsets
     HoursFormSet = inlineformset_factory(Shop, ShopOperatingHours, form=ShopOperatingHoursForm, extra=7, max_num=7, can_delete=True)
 
+    # Roving Logic: Clean up existing hours if any
+    if shop.name == 'Roving':
+        if shop.operating_hours.exists():
+            shop.operating_hours.all().delete()
+
     if request.method == 'POST':
         form = ShopForm(request.POST, instance=shop)
 
@@ -116,13 +121,21 @@ def shop_manage(request, shop_id=None):
             req_instance, _ = ShopRequirement.objects.get_or_create(shop=created_shop)
             req_form = ShopRequirementForm(request.POST, instance=req_instance)
 
-            hours_formset = HoursFormSet(request.POST, instance=created_shop)
+            if shop.name == 'Roving':
+                # Initialize hours_formset to None for safety in case of fallback
+                hours_formset = None
+                if req_form.is_valid():
+                    req_form.save()
+                    messages.success(request, "Shop saved successfully.")
+                    return redirect('attendance:shop_list')
+            else:
+                hours_formset = HoursFormSet(request.POST, instance=created_shop)
 
-            if req_form.is_valid() and hours_formset.is_valid():
-                req_form.save()
-                hours_formset.save()
-                messages.success(request, "Shop saved successfully.")
-                return redirect('attendance:shop_list')
+                if req_form.is_valid() and hours_formset.is_valid():
+                    req_form.save()
+                    hours_formset.save()
+                    messages.success(request, "Shop saved successfully.")
+                    return redirect('attendance:shop_list')
     else:
         form = ShopForm(instance=shop)
         if shop_id:
@@ -131,44 +144,48 @@ def shop_manage(request, shop_id=None):
         else:
             req_form = ShopRequirementForm()
 
-        hours_formset = HoursFormSet(instance=shop)
+        if shop.name != 'Roving':
+            hours_formset = HoursFormSet(instance=shop)
+        else:
+            hours_formset = None
 
     # Prepare ordered forms for Mon-Sun (0-6)
-    # This logic matches forms to days for the template to render fixed rows
     ordered_forms = []
-    days = range(7)
-    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    if shop.name != 'Roving':
+        # This logic matches forms to days for the template to render fixed rows
+        days = range(7)
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-    # Map existing forms by day
-    existing_map = {}
-    extra_forms = []
+        # Map existing forms by day
+        existing_map = {}
+        extra_forms = []
 
-    for f in hours_formset:
-        if f.instance.pk and f.instance.day is not None:
-             existing_map[f.instance.day] = f
-        else:
-             extra_forms.append(f)
+        for f in hours_formset:
+            if f.instance.pk and f.instance.day is not None:
+                 existing_map[f.instance.day] = f
+            else:
+                 extra_forms.append(f)
 
-    extra_iter = iter(extra_forms)
+        extra_iter = iter(extra_forms)
 
-    for day_code in days:
-        if day_code in existing_map:
-            form_to_use = existing_map[day_code]
-        else:
-            # Grab next extra form
-            try:
-                form_to_use = next(extra_iter)
-                # Set the initial day for this form so it saves correctly
-                form_to_use.initial['day'] = day_code
-            except StopIteration:
-                # Should not happen if extra=7 and we don't have >7 forms
-                form_to_use = None
+        for day_code in days:
+            if day_code in existing_map:
+                form_to_use = existing_map[day_code]
+            else:
+                # Grab next extra form
+                try:
+                    form_to_use = next(extra_iter)
+                    # Set the initial day for this form so it saves correctly
+                    form_to_use.initial['day'] = day_code
+                except StopIteration:
+                    # Should not happen if extra=7 and we don't have >7 forms
+                    form_to_use = None
 
-        ordered_forms.append({
-            'day_name': day_names[day_code],
-            'day_code': day_code,
-            'form': form_to_use
-        })
+            ordered_forms.append({
+                'day_name': day_names[day_code],
+                'day_code': day_code,
+                'form': form_to_use
+            })
 
     return render(request, 'attendance/shop_manage.html', {
         'form': form,
