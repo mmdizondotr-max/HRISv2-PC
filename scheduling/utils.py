@@ -125,8 +125,9 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
     score += (absent_count * 4.0)
 
     # j. Add 2 points for each day staff is assigned to the same shop in the current week.
-    same_shop_count = current_week_assignments.get_shop_assignment_count(user.id, shop.id)
-    score += (same_shop_count * 2.0)
+    # Removed to fix "flat score" issue (User wants visible deduction per duty).
+    # same_shop_count = current_week_assignments.get_shop_assignment_count(user.id, shop.id)
+    # score += (same_shop_count * 2.0)
 
     return score
 

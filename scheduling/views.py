@@ -51,7 +51,14 @@ def my_schedule(request):
         return render(request, 'scheduling/my_schedule.html', {'schedule': None})
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
-    shops = Shop.objects.filter(is_active=True)
+    # Ensure Roving is first for display consistency
+    shops_qs = Shop.objects.filter(is_active=True)
+    roving = shops_qs.filter(name='Roving').first()
+    others = list(shops_qs.exclude(name='Roving'))
+    if roving:
+        shops = [roving] + others
+    else:
+        shops = others
 
     matrix = {}
     for d in dates:
@@ -95,7 +102,14 @@ def schedule_history_detail(request, schedule_id):
     schedule = get_object_or_404(Schedule, id=schedule_id, is_published=True)
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
-    shops = Shop.objects.all()
+    # Ensure Roving is first for display consistency
+    shops_qs = Shop.objects.all()
+    roving = shops_qs.filter(name='Roving').first()
+    others = list(shops_qs.exclude(name='Roving'))
+    if roving:
+        shops = [roving] + others
+    else:
+        shops = others
 
     matrix = {}
     for d in dates:
@@ -142,7 +156,14 @@ def generator(request):
 
     current_schedule = weeks[0]
 
-    shops = Shop.objects.filter(is_active=True)
+    # Ensure Roving is first for display consistency
+    shops_qs = Shop.objects.filter(is_active=True)
+    roving = shops_qs.filter(name='Roving').first()
+    others = list(shops_qs.exclude(name='Roving'))
+    if roving:
+        shops = [roving] + others
+    else:
+        shops = others
 
     if request.method == 'POST':
         if 'generate' in request.POST:

@@ -72,7 +72,7 @@ class ScheduleRevampTests(TestCase):
         score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
         self.assertEqual(score, 18.0)
 
-    def test_same_shop_bonus(self):
+    def test_same_shop_bonus_removed(self):
         # User 1 assigned to Shop 1 on Monday
         current_assignments = CurrentWeekAssignments()
         current_assignments.add_assignment(self.user1.id, self.shop1.id, self.today)
@@ -88,10 +88,10 @@ class ScheduleRevampTests(TestCase):
 
         # Base 20
         # -2 (Duty count 1)
-        # +2 (Assigned to same shop current week)
-        # Score = 20
+        # +0 (Assigned to same shop current week - REMOVED)
+        # Score = 18
         score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
-        self.assertEqual(score, 20.0)
+        self.assertEqual(score, 18.0)
 
     def test_absent_bonus(self):
          # User 1 was absent last week (Shift exists, no Log)
