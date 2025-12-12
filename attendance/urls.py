@@ -11,4 +11,5 @@ urlpatterns = [
     path('shops/delete/<int:shop_id>/', views.shop_delete, name='shop_delete'),
     path('dtr/', views.daily_time_record, name='dtr_view'),
     path('dtr/<int:user_id>/', views.daily_time_record, name='dtr_view_user'),
+    path('dtr/edit/<int:log_id>/', views.edit_time_log, name='edit_time_log'),
 ]

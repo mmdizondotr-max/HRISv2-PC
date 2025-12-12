@@ -6,7 +6,12 @@
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h3>Edit User: {{ target_user.get_full_name }}</h3>
-                <a href="{% url 'attendance:dtr_view_user' target_user.id %}" class="btn btn-outline-info btn-sm">View Daily Time Record</a>
+                <div>
+                     {% if target_user.photo_id %}
+                        <a href="{{ target_user.photo_id.url }}" target="_blank" class="btn btn-outline-secondary btn-sm me-2">View Uploaded ID</a>
+                     {% endif %}
+                    <a href="{% url 'attendance:dtr_view_user' target_user.id %}" class="btn btn-outline-info btn-sm">View Daily Time Record</a>
+                </div>
             </div>
             <div class="card-body">
                 <form method="post">

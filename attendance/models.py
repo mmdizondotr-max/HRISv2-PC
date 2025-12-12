@@ -35,6 +35,7 @@ class TimeLog(models.Model):
     date = models.DateField(default=timezone.now)
     time_in = models.TimeField(null=True, blank=True)
     time_out = models.TimeField(null=True, blank=True)
+    remarks = models.TextField(blank=True, null=True, help_text="Stores manual override history and remarks.")
 
     class Meta:
         unique_together = ('user', 'date') # One log per user per day as per implication of "Time-In button... record it as employee's time-in for the day"
