@@ -325,13 +325,21 @@ def _generate_multi_week_schedule(shops, weeks):
 
                     potential_users = [u for u in shop.applicable_staff.all() if u.is_active and u.is_approved]
 
-                    valid_candidates = []
+                    # Filter candidates who are actually available (not assigned elsewhere today)
+                    available_users = []
                     for user in potential_users:
-                        # Check if already assigned Duty today
-                        if current_assignments.is_assigned_on_day(user.id, current_date):
-                            continue
+                        if not current_assignments.is_assigned_on_day(user.id, current_date):
+                            available_users.append(user)
 
-                        score = calculate_assignment_score(user, shop, current_date, history_data, current_assignments)
+                    # Calculate Min Duty among available candidates
+                    min_duty = None
+                    if available_users:
+                        duty_counts = [current_assignments.get_duty_count(u.id) for u in available_users]
+                        min_duty = min(duty_counts)
+
+                    valid_candidates = []
+                    for user in available_users:
+                        score = calculate_assignment_score(user, shop, current_date, history_data, current_assignments, min_duty_count_among_eligible=min_duty)
                         valid_candidates.append((user, score))
 
                     if valid_candidates:

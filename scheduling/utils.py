@@ -32,7 +32,7 @@ def ensure_roving_shop_and_assignments():
              if set(current_applicable) != target_applicable:
                 user.applicable_shops.set(target_applicable)
 
-def calculate_assignment_score(user, shop, date, history_data, current_week_assignments):
+def calculate_assignment_score(user, shop, date, history_data, current_week_assignments, min_duty_count_among_eligible=None):
     """
     Calculates the score for assigning 'user' to 'shop' on 'date' as Duty Staff.
 
@@ -128,6 +128,11 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
     # Removed to fix "flat score" issue (User wants visible deduction per duty).
     # same_shop_count = current_week_assignments.get_shop_assignment_count(user.id, shop.id)
     # score += (same_shop_count * 2.0)
+
+    # k. Add 1 point to all user/s with the fewest assigned shift in the current week
+    if min_duty_count_among_eligible is not None:
+        if current_duty_count == min_duty_count_among_eligible:
+            score += 1.0
 
     return score
 
