@@ -52,16 +52,14 @@
                                         </td>
                                     {% endfor %}
                                 </tr>
-                            {% else %}
-                                <!-- Standard Shop: Main Row -->
                                 <tr>
-                                    <td rowspan="2" class="align-middle fw-bold">{{ shop.name }}</td>
-                                    <td class="align-middle bg-light">Duty</td>
+                                    <td rowspan="1" class="align-middle fw-bold bg-secondary text-white">Standby Pool</td>
+                                    <td class="align-middle bg-secondary text-white">Standby</td>
                                     {% for date in dates %}
                                         <td class="align-middle">
                                             {% with assignments=matrix|get_item:date|get_item:shop.id %}
-                                                {% for user in assignments.main %}
-                                                    <div class="badge bg-primary text-wrap mb-1" style="width: 100%;">
+                                                {% for user in assignments.backup %}
+                                                    <div class="badge bg-info text-dark text-wrap mb-1" style="width: 100%;">
                                                         {{ user.get_short_name_for_schedule }}
                                                     </div>
                                                 {% endfor %}
@@ -69,14 +67,16 @@
                                         </td>
                                     {% endfor %}
                                 </tr>
-                                <!-- Standard Shop: Backup Row -->
+                            {% else %}
+                                <!-- Standard Shop: Main Row Only -->
                                 <tr>
-                                    <td class="align-middle bg-light">Standby</td>
+                                    <td rowspan="1" class="align-middle fw-bold">{{ shop.name }}</td>
+                                    <td class="align-middle bg-light">Duty</td>
                                     {% for date in dates %}
                                         <td class="align-middle">
                                             {% with assignments=matrix|get_item:date|get_item:shop.id %}
-                                                {% for user in assignments.backup %}
-                                                    <div class="badge bg-info text-dark text-wrap mb-1" style="width: 100%;">
+                                                {% for user in assignments.main %}
+                                                    <div class="badge bg-primary text-wrap mb-1" style="width: 100%;">
                                                         {{ user.get_short_name_for_schedule }}
                                                     </div>
                                                 {% endfor %}

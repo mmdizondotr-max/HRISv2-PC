@@ -45,8 +45,9 @@
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
                                             <th>{{ shop.name }}</th>
+                                            <th>Standby</th>
                                         {% else %}
-                                            <th colspan="2">{{ shop.name }}</th>
+                                            <th>{{ shop.name }}</th>
                                         {% endif %}
                                     {% endfor %}
                                 </tr>
@@ -54,10 +55,10 @@
                                     <th></th>
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
-                                            <th>Duty / Standby</th>
-                                        {% else %}
                                             <th>Duty</th>
                                             <th>Standby</th>
+                                        {% else %}
+                                            <th>Duty</th>
                                         {% endif %}
                                     {% endfor %}
                                 </tr>
@@ -67,49 +68,52 @@
                                 <tr>
                                     <td class="fw-bold">{{ date|date:"D, M d" }}</td>
                                     {% for shop in shops %}
-                                        <!-- Duty Staff -->
-                                        <td>
-                                            {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                                <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
-                                                    {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
-                                                    <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
-                                                    {% if not week.schedule.is_published or request.user.is_superuser %}
-                                                        <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
-                                                    {% endif %}
-                                                </div><br>
-                                            {% endfor %}
-
-                                            {% if shop.name == 'Roving' %}
-                                                <!-- Roving Backup (Universal Pool) -->
-                                                {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                                    <div class="badge bg-secondary mb-1 position-relative" title="Priority Score (neg prev duty): {{ shift.score|floatformat:1 }}">
-                                                        {{ shift.user.get_short_name_for_schedule }} (Standby)
+                                        {% if shop.name == 'Roving' %}
+                                            <!-- Roving Duty -->
+                                            <td>
+                                                {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                                    <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
+                                                        {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
+                                                        <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
                                                         {% if not week.schedule.is_published or request.user.is_superuser %}
                                                             <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
                                                         {% endif %}
                                                     </div><br>
                                                 {% endfor %}
-                                            {% endif %}
-
-                                            {% if not week.schedule.is_published %}
-                                                <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
-                                            {% endif %}
-                                        </td>
-                                        <!-- Standby Staff (Standard Shops) - Should be empty for non-Roving if all assigned to Roving -->
-                                        {% if shop.name != 'Roving' %}
-                                        <td>
-                                            {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                                <div class="badge bg-secondary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
-                                                    {{ shift.user.get_short_name_for_schedule }}
-                                                    {% if not week.schedule.is_published or request.user.is_superuser %}
-                                                        <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
-                                                    {% endif %}
-                                                </div><br>
-                                            {% endfor %}
-                                            {% if not week.schedule.is_published %}
-                                                <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'backup' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
-                                            {% endif %}
-                                        </td>
+                                                {% if not week.schedule.is_published %}
+                                                    <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
+                                                {% endif %}
+                                            </td>
+                                            <!-- Standby (Roving Backup) -->
+                                            <td>
+                                                {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                                    <div class="badge bg-secondary mb-1 position-relative" title="Priority Score (neg prev duty): {{ shift.score|floatformat:1 }}">
+                                                        {{ shift.user.get_short_name_for_schedule }}
+                                                        {% if not week.schedule.is_published or request.user.is_superuser %}
+                                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                                        {% endif %}
+                                                    </div><br>
+                                                {% endfor %}
+                                                {% if not week.schedule.is_published %}
+                                                    <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'backup' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
+                                                {% endif %}
+                                            </td>
+                                        {% else %}
+                                            <!-- Regular Shop Duty -->
+                                            <td>
+                                                {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                                    <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
+                                                        {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
+                                                        <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
+                                                        {% if not week.schedule.is_published or request.user.is_superuser %}
+                                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                                        {% endif %}
+                                                    </div><br>
+                                                {% endfor %}
+                                                {% if not week.schedule.is_published %}
+                                                    <a href="{% url 'scheduling:shift_add' week.schedule.id date|date:'Y-m-d' shop.id 'main' %}" class="btn btn-sm btn-outline-secondary py-0">+</a>
+                                                {% endif %}
+                                            </td>
                                         {% endif %}
                                     {% endfor %}
                                 </tr>
