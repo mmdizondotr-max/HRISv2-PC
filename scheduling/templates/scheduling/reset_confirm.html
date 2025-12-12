@@ -18,6 +18,10 @@
 
                     <form method="post">
                         {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Please enter your password to confirm:</label>
+                            <input type="password" class="form-control w-50 mx-auto" id="password" name="password" required>
+                        </div>
                         <a href="{% url 'scheduling:generator' %}" class="btn btn-secondary">Cancel</a>
                         <button type="submit" name="confirm_reset" class="btn btn-danger">Confirm Delete All Data</button>
                     </form>

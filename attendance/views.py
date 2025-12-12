@@ -342,12 +342,12 @@ def edit_time_log(request, log_id):
     log = get_object_or_404(TimeLog, id=log_id)
 
     if request.method == 'POST':
+        # Capture original values before form validation potentially modifies the instance
+        original_in = log.time_in
+        original_out = log.time_out
+
         form = TimeLogEditForm(request.POST, instance=log)
         if form.is_valid():
-            # Capture changes
-            original_in = log.time_in
-            original_out = log.time_out
-
             new_in = form.cleaned_data['time_in']
             new_out = form.cleaned_data['time_out']
             manual_remarks = form.cleaned_data['manual_remarks']
