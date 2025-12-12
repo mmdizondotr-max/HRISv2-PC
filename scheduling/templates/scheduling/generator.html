@@ -44,8 +44,8 @@
                                     <th>Date</th>
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
-                                            <th>{{ shop.name }}</th>
-                                            <th>Standby</th>
+                                            <th class="table-warning text-dark">{{ shop.name }}</th>
+                                            <th class="table-info text-dark">Standby</th>
                                         {% else %}
                                             <th>{{ shop.name }}</th>
                                         {% endif %}
@@ -55,8 +55,8 @@
                                     <th></th>
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
-                                            <th>Duty</th>
-                                            <th>Standby</th>
+                                            <th class="table-warning text-dark">Duty</th>
+                                            <th class="table-info text-dark">Standby</th>
                                         {% else %}
                                             <th>Duty</th>
                                         {% endif %}
@@ -70,7 +70,7 @@
                                     {% for shop in shops %}
                                         {% if shop.name == 'Roving' %}
                                             <!-- Roving Duty -->
-                                            <td>
+                                            <td class="table-warning">
                                                 {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
                                                     <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
                                                         {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
@@ -85,7 +85,7 @@
                                                 {% endif %}
                                             </td>
                                             <!-- Standby (Roving Backup) -->
-                                            <td>
+                                            <td class="table-info">
                                                 {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
                                                     <div class="badge bg-secondary mb-1 position-relative" title="Priority Score (neg prev duty): {{ shift.score|floatformat:1 }}">
                                                         {{ shift.user.get_short_name_for_schedule }}
