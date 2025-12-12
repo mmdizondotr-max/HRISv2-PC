@@ -98,6 +98,36 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-logout on tab close logic
+        let isNavigating = false;
+
+        // Mark navigation when clicking links or submitting forms
+        document.addEventListener('click', function(e) {
+            let target = e.target.closest('a');
+            if (target && target.getAttribute('href') && !target.getAttribute('href').startsWith('#') && !target.getAttribute('target')) {
+                isNavigating = true;
+            }
+        });
+
+        document.addEventListener('submit', function(e) {
+            isNavigating = true;
+        });
+
+        window.addEventListener('beforeunload', function (e) {
+            if (!isNavigating) {
+                // If not navigating internally, assume close/reload and trigger logout
+                // Use navigator.sendBeacon to ensure request is sent even if page unloads
+                const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value;
+                if (csrfToken) {
+                     const formData = new FormData();
+                     formData.append('csrfmiddlewaretoken', csrfToken);
+                     // Assuming standard Django logout URL '/logout/'
+                     navigator.sendBeacon('/logout/', formData);
+                }
+            }
+        });
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

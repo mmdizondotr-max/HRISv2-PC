@@ -30,9 +30,9 @@
                             <th>Date</th>
                             {% for shop in shops %}
                                 {% if shop.name == 'Roving' %}
-                                    <th class="table-warning text-dark">{{ shop.name }}</th>
+                                    <th colspan="2" class="table-warning text-dark">{{ shop.name }}</th>
                                 {% else %}
-                                    <th colspan="2">{{ shop.name }}</th>
+                                    <th>{{ shop.name }}</th>
                                 {% endif %}
                             {% endfor %}
                         </tr>
@@ -41,9 +41,9 @@
                             {% for shop in shops %}
                                 {% if shop.name == 'Roving' %}
                                     <th class="table-warning text-dark">Duty</th>
+                                    <th class="table-warning text-dark">Standby</th>
                                 {% else %}
                                     <th>Duty</th>
-                                    <th>Standby</th>
                                 {% endif %}
                             {% endfor %}
                         </tr>
@@ -60,8 +60,8 @@
                                     {% endfor %}
                                 </td>
                                 <!-- Standby Staff -->
-                                {% if shop.name != 'Roving' %}
-                                <td>
+                                {% if shop.name == 'Roving' %}
+                                <td class="table-warning">
                                     {% for user in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
                                         <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
                                     {% endfor %}

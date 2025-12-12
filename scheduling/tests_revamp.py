@@ -72,7 +72,7 @@ class ScheduleRevampTests(TestCase):
         score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
         self.assertEqual(score, 18.0)
 
-    def test_same_shop_bonus_removed(self):
+    def test_same_shop_bonus_removed_but_consecutive_added(self):
         # User 1 assigned to Shop 1 on Monday
         current_assignments = CurrentWeekAssignments()
         current_assignments.add_assignment(self.user1.id, self.shop1.id, self.today)
@@ -88,10 +88,10 @@ class ScheduleRevampTests(TestCase):
 
         # Base 20
         # -2 (Duty count 1)
-        # +0 (Assigned to same shop current week - REMOVED)
-        # Score = 18
+        # +1 (Consecutive day same shop bonus)
+        # Score = 19
         score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
-        self.assertEqual(score, 18.0)
+        self.assertEqual(score, 19.0)
 
     def test_absent_bonus(self):
          # User 1 was absent last week (Shift exists, no Log)
@@ -112,3 +112,26 @@ class ScheduleRevampTests(TestCase):
         # Score = 24
         score = calculate_assignment_score(self.user1, self.shop1, self.today, history_data, current_assignments)
         self.assertEqual(score, 24.0)
+
+    def test_preferred_day_off_deduction(self):
+        # Test preference deduction (-5.0)
+        user_pref = User.objects.create(username="user_pref", first_name="User", last_name="Pref", tier='regular', is_approved=True)
+        user_pref.applicable_shops.add(self.shop1)
+        # Set preference: Monday (0)
+        Preference.objects.create(user=user_pref, top_preferred_day_off=0) # 0 = Monday
+
+        # Test on Monday (Day 0)
+        today = datetime.date(2023, 10, 23) # A Monday
+
+        current_assignments = CurrentWeekAssignments()
+        history_data = {
+            'prev_week_logs': [],
+            'past_3_weeks_logs': [],
+            'prev_week_shifts': []
+        }
+
+        # Base: 20
+        # Deduction: -5.0 (Preferred Day Off)
+        # Expected: 15.0
+        score = calculate_assignment_score(user_pref, self.shop1, today, history_data, current_assignments)
+        self.assertEqual(score, 15.0)

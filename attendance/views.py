@@ -76,10 +76,14 @@ def home(request):
                 messages.success(request, f"Timed out at {current_time.strftime('%I:%M %p')}.")
                 return redirect('attendance:home')
 
+    # Fetch today's logs for display, excluding Roving
+    todays_logs_list = TimeLog.objects.filter(date=today).exclude(shop__name='Roving').select_related('user', 'shop').order_by('time_in')
+
     return render(request, 'attendance/home.html', {
         'current_time': current_time,
         'shops': shops,
         'todays_log': todays_log,
+        'todays_logs_list': todays_logs_list,
     })
 
 @login_required
@@ -251,9 +255,28 @@ def daily_time_record(request, user_id=None):
         date__range=[start_date, end_date]
     ).order_by('-date')
 
+    total_hours = 0
+    logs_data = []
+
+    for log in logs:
+        duration = 0
+        if log.time_in and log.time_out:
+            # Combine date and time to calculate duration
+            dt_in = datetime.datetime.combine(log.date, log.time_in)
+            dt_out = datetime.datetime.combine(log.date, log.time_out)
+            diff = dt_out - dt_in
+            duration = diff.total_seconds() / 3600.0
+
+        total_hours += duration
+        logs_data.append({
+            'log': log,
+            'duration': duration
+        })
+
     return render(request, 'attendance/dtr.html', {
         'target_user': target_user,
-        'logs': logs,
+        'logs_data': logs_data,
+        'total_hours': total_hours,
         'start_date': start_date,
         'end_date': end_date,
     })

@@ -90,7 +90,7 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
         pref = user.preference
         # date.weekday() returns 0=Mon, 6=Sun. Preference uses same mapping.
         if pref.top_preferred_day_off == date.weekday():
-            score -= 1.0
+            score -= 5.0
     except Preference.DoesNotExist:
         pass
 
