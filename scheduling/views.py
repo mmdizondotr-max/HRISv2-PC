@@ -508,17 +508,23 @@ def reset_system_data(request_user):
     Preference.objects.all().delete()
     PasswordResetRequest.objects.all().delete()
 
-@user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
+@user_passes_test(lambda u: u.is_authenticated and (u.tier == 'administrator' or u.is_superuser))
 def reset_data(request):
     if request.method == 'POST':
         if 'confirm_reset' in request.POST:
-            reset_system_data(request.user)
-            messages.success(request, "All system data has been reset.")
-            return redirect('scheduling:generator')
+            password = request.POST.get('password')
+            if not password:
+                messages.error(request, "Password is required to confirm reset.")
+            elif not request.user.check_password(password):
+                messages.error(request, "Incorrect password. Data reset cancelled.")
+            else:
+                reset_system_data(request.user)
+                messages.success(request, "All system data has been reset.")
+                return redirect('scheduling:generator')
 
     return render(request, 'scheduling/reset_confirm.html')
 
-@user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
+@user_passes_test(lambda u: u.is_authenticated and (u.tier == 'administrator' or u.is_superuser))
 def load_test_data(request):
     if request.method == 'POST':
         # 0. Reset Data first

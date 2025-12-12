@@ -3,13 +3,20 @@
 /home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/db/backends/utils.py:98: RuntimeWarning: Accessing the database during app initialization is discouraged. To fix this warning, avoid executing queries in AppConfig.ready() or when your app modules are imported.
   warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
 Watching for file changes with StatReloader
-[12/Dec/2025 13:48:11] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:48:11] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 13:48:12] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 13:48:13] "GET /attendance/ HTTP/1.1" 200 7625
-[12/Dec/2025 13:48:13] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:48:13] "GET / HTTP/1.1" 200 4524
-Internal Server Error: /attendance/dtr/edit/9/
+Not Found: /accounts/login/
+[12/Dec/2025 14:34:23] "GET /accounts/login/ HTTP/1.1" 404 4683
+Not Found: /accounts/login/
+[12/Dec/2025 14:35:01] "HEAD /accounts/login/ HTTP/1.1" 404 0
+[12/Dec/2025 14:35:37] "GET / HTTP/1.1" 200 4524
+[12/Dec/2025 14:35:37] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[12/Dec/2025 14:35:38] "POST / HTTP/1.1" 302 0
+[12/Dec/2025 14:35:39] "GET /attendance/ HTTP/1.1" 200 7712
+[12/Dec/2025 14:35:39] "POST /logout/ HTTP/1.1" 302 0
+[12/Dec/2025 14:35:39] "GET / HTTP/1.1" 200 4524
+[12/Dec/2025 14:35:39] "GET /attendance/dtr/ HTTP/1.1" 200 8779
+[12/Dec/2025 14:35:39] "POST /logout/ HTTP/1.1" 302 0
+[12/Dec/2025 14:35:39] "GET / HTTP/1.1" 200 4524
+Internal Server Error: /scheduling/reset-data/
 Traceback (most recent call last):
   File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
     response = get_response(request)
@@ -17,74 +24,22 @@ Traceback (most recent call last):
   File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
     response = wrapped_callback(request, *callback_args, **callback_kwargs)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/contrib/auth/decorators.py", line 59, in _view_wrapper
-    return view_func(request, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/app/attendance/views.py", line 385, in edit_time_log
-    return render(request, 'attendance/edit_time_log.html', {'form': form, 'log': log})
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/shortcuts.py", line 25, in render
-    content = loader.render_to_string(template_name, context, request, using=using)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/loader.py", line 62, in render_to_string
-    return template.render(context, request)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/backends/django.py", line 107, in render
-    return self.template.render(context)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 174, in render
-    return self._render(context)
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/contrib/auth/decorators.py", line 56, in _view_wrapper
+    test_pass = test_func(request.user)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scheduling/views.py", line 511, in <lambda>
+    @user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
+                                ^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/utils/functional.py", line 253, in inner
+    return func(_wrapped, *args)
            ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 166, in _render
-    return self.nodelist.render(context)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1091, in render
-    return SafeString("".join([node.render_annotated(context) for node in self]))
-                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1052, in render_annotated
-    return self.render(context)
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/loader_tags.py", line 160, in render
-    return compiled_parent._render(context)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 166, in _render
-    return self.nodelist.render(context)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1091, in render
-    return SafeString("".join([node.render_annotated(context) for node in self]))
-                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1052, in render_annotated
-    return self.render(context)
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/loader_tags.py", line 66, in render
-    result = block.nodelist.render(context)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1091, in render
-    return SafeString("".join([node.render_annotated(context) for node in self]))
-                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/base.py", line 1052, in render_annotated
-    return self.render(context)
-           ^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/template/defaulttags.py", line 511, in render
-    url = reverse(view_name, args=args, kwargs=kwargs, current_app=current_app)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/urls/base.py", line 98, in reverse
-    resolved_url = resolver._reverse_with_prefix(view, prefix, *args, **kwargs)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/urls/resolvers.py", line 842, in _reverse_with_prefix
-    raise NoReverseMatch(msg)
-django.urls.exceptions.NoReverseMatch: Reverse for 'daily_time_record' not found. 'daily_time_record' is not a valid view function or pattern name.
-[12/Dec/2025 13:48:13] "GET /attendance/dtr/edit/9/ HTTP/1.1" 500 161118
-[12/Dec/2025 13:48:18] "GET /accounts/promote/1/ HTTP/1.1" 302 0
-[12/Dec/2025 13:48:18] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:48:18] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:48:18] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:48:18] "GET / HTTP/1.1" 200 4524
-/app/attendance/views.py changed, reloading.
+AttributeError: 'AnonymousUser' object has no attribute 'tier'
+[12/Dec/2025 14:35:39] "GET /scheduling/reset-data/ HTTP/1.1" 500 72451
+/app/scheduling/views.py changed, reloading.
 Performing system checks...
 
 System check identified no issues (0 silenced).
-December 12, 2025 - 13:47:56
+December 12, 2025 - 14:33:25
 Django version 6.0, using settings 'hris_project.settings'
 Starting development server at http://0.0.0.0:8000/
 Quit the server with CONTROL-C.
@@ -94,58 +49,14 @@ For more information on production servers see: https://docs.djangoproject.com/e
 /home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/db/backends/utils.py:98: RuntimeWarning: Accessing the database during app initialization is discouraged. To fix this warning, avoid executing queries in AppConfig.ready() or when your app modules are imported.
   warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
 Watching for file changes with StatReloader
-[12/Dec/2025 13:49:17] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:17] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 13:49:19] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 13:49:24] "GET /attendance/ HTTP/1.1" 200 7625
-[12/Dec/2025 13:49:24] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:49:24] "GET /attendance/dtr/edit/10/ HTTP/1.1" 200 7338
-[12/Dec/2025 13:49:24] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:25] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:49:25] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:55] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:49:55] "GET /accounts/promote/1/ HTTP/1.1" 302 0
-[12/Dec/2025 13:49:55] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:55] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:55] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:49:55] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:49:55] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:51:30] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:51:30] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 13:51:31] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 13:51:32] "GET /attendance/ HTTP/1.1" 200 7625
-[12/Dec/2025 13:51:32] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:51:32] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:51:32] "GET /attendance/dtr/edit/11/ HTTP/1.1" 200 7338
-[12/Dec/2025 13:51:32] "POST /attendance/dtr/edit/11/ HTTP/1.1" 302 0
-[12/Dec/2025 13:51:32] "GET /?next=/attendance/dtr/edit/11/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:52:02] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:52:02] "GET /accounts/promote/1/ HTTP/1.1" 302 0
-[12/Dec/2025 13:52:02] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 13:52:02] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:52:02] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 13:52:02] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 13:52:02] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:21] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:21] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 14:00:23] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 14:00:28] "GET /attendance/ HTTP/1.1" 200 7625
-[12/Dec/2025 14:00:28] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:00:28] "GET /attendance/dtr/edit/12/ HTTP/1.1" 200 7338
-[12/Dec/2025 14:00:28] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:28] "POST /attendance/dtr/edit/12/ HTTP/1.1" 302 0
-[12/Dec/2025 14:00:28] "GET /?next=/attendance/dtr/edit/12/ HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:58] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:00:58] "GET /accounts/promote/1/ HTTP/1.1" 302 0
-[12/Dec/2025 14:00:58] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:58] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:58] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:00:58] "GET /?next=/accounts/promote/1/ HTTP/1.1" 200 4524
-[12/Dec/2025 14:00:58] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:01:48] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:01:48] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 14:01:49] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 14:01:49] "GET /attendance/ HTTP/1.1" 200 7625
-[12/Dec/2025 14:01:49] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:01:49] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:01:49] "GET /attendance/dtr/edit/13/ HTTP/1.1" 200 7338
+[12/Dec/2025 14:36:31] "GET / HTTP/1.1" 200 4524
+[12/Dec/2025 14:36:31] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[12/Dec/2025 14:36:32] "POST / HTTP/1.1" 302 0
+[12/Dec/2025 14:36:32] "GET /attendance/ HTTP/1.1" 200 7712
+[12/Dec/2025 14:36:32] "POST /logout/ HTTP/1.1" 302 0
+[12/Dec/2025 14:36:32] "GET /attendance/dtr/ HTTP/1.1" 200 8779
+[12/Dec/2025 14:36:32] "GET / HTTP/1.1" 200 4524
+[12/Dec/2025 14:36:32] "POST /logout/ HTTP/1.1" 302 0
+[12/Dec/2025 14:36:32] "GET /scheduling/reset-data/ HTTP/1.1" 302 0
+[12/Dec/2025 14:36:32] "GET / HTTP/1.1" 200 4524
+[12/Dec/2025 14:36:32] "GET /?next=/scheduling/reset-data/ HTTP/1.1" 200 4524
