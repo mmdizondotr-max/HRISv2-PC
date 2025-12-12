@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Time Log - iMDiz HRIS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                Edit Time Log
+            </div>
+            <div class="card-body">
+                <p><strong>User:</strong> {{ log.user.get_full_name }}</p>
+                <p><strong>Date:</strong> {{ log.date }}</p>
+                <p><strong>Shop:</strong> {{ log.shop.name }}</p>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="{{ form.time_in.id_for_label }}" class="form-label">Time In</label>
+                        {{ form.time_in }}
+                        {% if form.time_in.errors %}
+                            <div class="text-danger">{{ form.time_in.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.time_out.id_for_label }}" class="form-label">Time Out</label>
+                        {{ form.time_out }}
+                        {% if form.time_out.errors %}
+                            <div class="text-danger">{{ form.time_out.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.manual_remarks.id_for_label }}" class="form-label">{{ form.manual_remarks.label }}</label>
+                        {{ form.manual_remarks }}
+                         <div class="form-text">{{ form.manual_remarks.help_text }}</div>
+                        {% if form.manual_remarks.errors %}
+                            <div class="text-danger">{{ form.manual_remarks.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'attendance:dtr_view_user' user_id=log.user.id %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

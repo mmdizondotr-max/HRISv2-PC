@@ -29,14 +29,19 @@
         </div>
 
         <div class="table-responsive">
-            <table class="table table-striped table-bordered">
+            <table class="table table-striped table-bordered align-middle">
                 <thead class="table-dark">
                     <tr>
                         <th>Date</th>
                         <th>Shop</th>
                         <th>Time In</th>
                         <th>Time Out</th>
-                        <th>Hours Worked</th>
+                        <th>Regular Hours</th>
+                        <th>Overtime</th>
+                        <th>Remarks</th>
+                        {% if user.tier == 'supervisor' or user.tier == 'administrator' or user.is_superuser %}
+                        <th class="d-print-none">Actions</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -46,18 +51,35 @@
                         <td>{{ item.log.shop.name }}</td>
                         <td>{{ item.log.time_in|date:"h:i A"|default:"-" }}</td>
                         <td>{{ item.log.time_out|date:"h:i A"|default:"-" }}</td>
-                        <td>{{ item.duration|floatformat:2 }}</td>
+                        <td>{{ item.regular_hours|floatformat:2 }}</td>
+                        <td>{{ item.overtime_hours|floatformat:2 }}</td>
+                        <td>
+                            {% if item.log.remarks %}
+                                <div style="max-height: 100px; overflow-y: auto; font-size: 0.85rem;">
+                                    {{ item.log.remarks|linebreaksbr }}
+                                </div>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        {% if user.tier == 'supervisor' or user.tier == 'administrator' or user.is_superuser %}
+                        <td class="d-print-none">
+                            <a href="{% url 'attendance:edit_time_log' log_id=item.log.id %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="text-center">No records found for this period.</td>
+                        <td colspan="{% if user.tier == 'supervisor' or user.tier == 'administrator' or user.is_superuser %}8{% else %}7{% endif %}" class="text-center">No records found for this period.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
                 <tfoot>
                     <tr class="table-secondary fw-bold">
-                        <td colspan="4" class="text-end">Total Hours:</td>
-                        <td>{{ total_hours|floatformat:2 }}</td>
+                        <td colspan="4" class="text-end">Total:</td>
+                        <td>{{ total_regular_hours|floatformat:2 }}</td>
+                        <td>{{ total_overtime_hours|floatformat:2 }}</td>
+                        <td colspan="{% if user.tier == 'supervisor' or user.tier == 'administrator' or user.is_superuser %}2{% else %}1{% endif %}"></td>
                     </tr>
                 </tfoot>
             </table>

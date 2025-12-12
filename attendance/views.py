@@ -6,6 +6,7 @@ from django.utils import timezone
 from .models import Shop, TimeLog, ShopOperatingHours
 from scheduling.models import ShopRequirement
 from .forms import ShopForm, ShopRequirementForm, ShopOperatingHoursForm
+from .forms_edit import TimeLogEditForm
 from django.forms import inlineformset_factory
 from django.http import HttpResponseForbidden
 import ntplib
@@ -253,30 +254,132 @@ def daily_time_record(request, user_id=None):
     logs = TimeLog.objects.filter(
         user=target_user,
         date__range=[start_date, end_date]
-    ).order_by('-date')
+    ).select_related('shop').order_by('-date')
 
-    total_hours = 0
+    total_regular_hours = 0.0
+    total_overtime_hours = 0.0
     logs_data = []
 
     for log in logs:
-        duration = 0
+        regular_hours = 0.0
+        overtime_hours = 0.0
+
         if log.time_in and log.time_out:
-            # Combine date and time to calculate duration
+            # Base Timestamps
             dt_in = datetime.datetime.combine(log.date, log.time_in)
             dt_out = datetime.datetime.combine(log.date, log.time_out)
-            diff = dt_out - dt_in
-            duration = diff.total_seconds() / 3600.0
 
-        total_hours += duration
+            # Check if Shop has operating hours for this day
+            # log.date.weekday(): Mon=0 ... Sun=6
+            if log.shop and log.shop.name != 'Roving':
+                try:
+                    op_hours = ShopOperatingHours.objects.get(shop=log.shop, day=log.date.weekday())
+
+                    # Create timestamps for Open/Close
+                    dt_open = datetime.datetime.combine(log.date, op_hours.open_time)
+                    dt_close = datetime.datetime.combine(log.date, op_hours.close_time)
+
+                    # --- Regular Hours Calculation ---
+                    # Intersection of [dt_in, dt_out] and [dt_open, dt_close]
+
+                    # Effective Start: Max(In, Open)
+                    eff_start = max(dt_in, dt_open)
+                    # Effective End: Min(Out, Close)
+                    eff_end = min(dt_out, dt_close)
+
+                    if eff_end > eff_start:
+                        regular_hours = (eff_end - eff_start).total_seconds() / 3600.0
+
+                    # --- Overtime Calculation ---
+                    # Time worked after Closing Time
+                    # OT = Max(0, dt_out - dt_close)
+
+                    if dt_out > dt_close:
+                        raw_ot = (dt_out - dt_close).total_seconds() / 3600.0
+                        if raw_ot > 2.0:
+                            overtime_hours = raw_ot
+                        else:
+                            overtime_hours = 0.0
+                    else:
+                        overtime_hours = 0.0
+
+                except ShopOperatingHours.DoesNotExist:
+                    # Fallback if no hours defined for that day but not Roving?
+                    # Treat as Roving (Raw Diff) or 0?
+                    # Assuming treated as Roving for safety to avoid 0 hours if data missing.
+                    diff = dt_out - dt_in
+                    regular_hours = diff.total_seconds() / 3600.0
+                    overtime_hours = 0.0
+            else:
+                # Roving or No Shop: Raw Difference
+                diff = dt_out - dt_in
+                regular_hours = diff.total_seconds() / 3600.0
+                overtime_hours = 0.0
+
+        total_regular_hours += regular_hours
+        total_overtime_hours += overtime_hours
+
         logs_data.append({
             'log': log,
-            'duration': duration
+            'regular_hours': regular_hours,
+            'overtime_hours': overtime_hours
         })
 
     return render(request, 'attendance/dtr.html', {
         'target_user': target_user,
         'logs_data': logs_data,
-        'total_hours': total_hours,
+        'total_regular_hours': total_regular_hours,
+        'total_overtime_hours': total_overtime_hours,
         'start_date': start_date,
         'end_date': end_date,
     })
+
+@login_required
+def edit_time_log(request, log_id):
+    if not request.user.is_superuser and request.user.tier not in ['supervisor', 'administrator']:
+        return HttpResponseForbidden("Unauthorized")
+
+    log = get_object_or_404(TimeLog, id=log_id)
+
+    if request.method == 'POST':
+        form = TimeLogEditForm(request.POST, instance=log)
+        if form.is_valid():
+            # Capture changes
+            original_in = log.time_in
+            original_out = log.time_out
+
+            new_in = form.cleaned_data['time_in']
+            new_out = form.cleaned_data['time_out']
+            manual_remarks = form.cleaned_data['manual_remarks']
+
+            # Construct Changelog
+            changes = []
+            if original_in != new_in:
+                changes.append(f"Time In: {original_in} -> {new_in}")
+            if original_out != new_out:
+                changes.append(f"Time Out: {original_out} -> {new_out}")
+
+            if changes:
+                timestamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
+                user_name = request.user.get_full_name() or request.user.username
+
+                log_entry = f"[{timestamp}] Edit by {user_name}:\n" + "\n".join(changes)
+
+                # Prepend the manual remark and the system log
+                new_entry = f"{manual_remarks}\n\n{log_entry}\n{'-'*20}\n"
+
+                if log.remarks:
+                    log.remarks = new_entry + log.remarks
+                else:
+                    log.remarks = new_entry
+
+                form.save()
+                messages.success(request, "Time log updated successfully.")
+            else:
+                messages.info(request, "No changes made.")
+
+            return redirect('attendance:dtr_view_user', user_id=log.user.id)
+    else:
+        form = TimeLogEditForm(instance=log)
+
+    return render(request, 'attendance/edit_time_log.html', {'form': form, 'log': log})
