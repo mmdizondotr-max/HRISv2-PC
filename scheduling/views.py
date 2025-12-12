@@ -271,6 +271,13 @@ def _generate_multi_week_schedule(shops, weeks):
             'past_3_weeks_logs': past_3_weeks_logs
         }
 
+        # Check if we should use attendance history (avoid "Absent" bonus if generating future weeks where logs don't exist yet)
+        # If prev_week_end is in the future (or today), we likely don't have complete logs.
+        # However, for load_test_data, we simulate logs sequentially, so checking real time might be tricky if "today" is fixed.
+        # But standard use case:
+        # If prev_week_end < timezone.localdate(), we assume history is valid.
+        use_attendance_history = prev_week_end < timezone.localdate()
+
         current_assignments = CurrentWeekAssignments()
 
         # Determine Max Duty Slots required
@@ -339,7 +346,7 @@ def _generate_multi_week_schedule(shops, weeks):
 
                     valid_candidates = []
                     for user in available_users:
-                        score = calculate_assignment_score(user, shop, current_date, history_data, current_assignments, min_duty_count_among_eligible=min_duty)
+                        score = calculate_assignment_score(user, shop, current_date, history_data, current_assignments, min_duty_count_among_eligible=min_duty, use_attendance_history=use_attendance_history)
                         valid_candidates.append((user, score))
 
                     if valid_candidates:
