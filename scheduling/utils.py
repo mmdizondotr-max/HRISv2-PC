@@ -32,7 +32,7 @@ def ensure_roving_shop_and_assignments():
              if set(current_applicable) != target_applicable:
                 user.applicable_shops.set(target_applicable)
 
-def calculate_assignment_score(user, shop, date, history_data, current_week_assignments, min_duty_count_among_eligible=None):
+def calculate_assignment_score(user, shop, date, history_data, current_week_assignments, min_duty_count_among_eligible=None, use_attendance_history=True):
     """
     Calculates the score for assigning 'user' to 'shop' on 'date' as Duty Staff.
 
@@ -56,26 +56,29 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
         return log.shop.id == shop_id
 
     # b. Deduct 1 point for each day of the previous week that the staff reported (timed-in) to the same shop.
-    for log in history_data['prev_week_logs']:
-        if log.user_id == user.id and log_matches_shop(log, shop.id):
-            score -= 1.0
+    if use_attendance_history:
+        for log in history_data['prev_week_logs']:
+            if log.user_id == user.id and log_matches_shop(log, shop.id):
+                score -= 1.0
 
     # c. Deduct 1 point for each week from the past 3 weeks, not counting the previous, that the staff reported at least once (timed-in) to the same shop.
     # We need to group past_3_weeks_logs by week.
     # Assuming history_data['past_3_weeks_logs'] is flat list.
     # We can use the date to determine week.
-    weeks_worked = set()
-    for log in history_data['past_3_weeks_logs']:
-        if log.user_id == user.id and log_matches_shop(log, shop.id):
-            # Identify week. Simple way: iso year and week number.
-            weeks_worked.add(log.date.isocalendar()[:2])
-    score -= len(weeks_worked) * 1.0
+    if use_attendance_history:
+        weeks_worked = set()
+        for log in history_data['past_3_weeks_logs']:
+            if log.user_id == user.id and log_matches_shop(log, shop.id):
+                # Identify week. Simple way: iso year and week number.
+                weeks_worked.add(log.date.isocalendar()[:2])
+        score -= len(weeks_worked) * 1.0
 
     # d. Deduct 1 point for each day of the previous week that the staff timed-in.
     # (Any shop)
-    for log in history_data['prev_week_logs']:
-        if log.user_id == user.id:
-            score -= 1.0
+    if use_attendance_history:
+        for log in history_data['prev_week_logs']:
+            if log.user_id == user.id:
+                score -= 1.0
 
     # e. Deduct 2 points for each time the staff was assigned as Duty Staff in the same week.
     # "same week" means the current week being generated.
@@ -94,18 +97,19 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
     # g. Deduct 2 points for each day staff acted as substitute in the past week.
     # "Acted as substitute" = Shift(backup) AND TimeLog exists for that day.
     # We need to cross reference prev_week_shifts (backup) and prev_week_logs.
-    sub_count = 0
-    # Create set of dates user worked
-    worked_dates = set()
-    for log in history_data['prev_week_logs']:
-        if log.user_id == user.id:
-            worked_dates.add(log.date)
+    if use_attendance_history:
+        sub_count = 0
+        # Create set of dates user worked
+        worked_dates = set()
+        for log in history_data['prev_week_logs']:
+            if log.user_id == user.id:
+                worked_dates.add(log.date)
 
-    for shift in history_data['prev_week_shifts']:
-        if shift.user_id == user.id and shift.role == 'backup':
-            if shift.date in worked_dates:
-                sub_count += 1
-    score -= (sub_count * 2.0)
+        for shift in history_data['prev_week_shifts']:
+            if shift.user_id == user.id and shift.role == 'backup':
+                if shift.date in worked_dates:
+                    sub_count += 1
+        score -= (sub_count * 2.0)
 
     # h. Deduct another 4 points if the staff has been assigned as Duty Staff for the 6th time prior to the current slot being evaluated.
     # Interpretation: If they ALREADY have 6 or more assignments, deduct 4.
@@ -117,12 +121,19 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
 
     # i. Add 4 points for each day staff was absent in the past week.
     # Absent = Shift(main) AND NO TimeLog.
-    absent_count = 0
-    for shift in history_data['prev_week_shifts']:
-        if shift.user_id == user.id and shift.role == 'main':
-            if shift.date not in worked_dates:
-                absent_count += 1
-    score += (absent_count * 4.0)
+    if use_attendance_history:
+        absent_count = 0
+        # Re-build worked_dates if g wasn't called? Optimally we just do it once.
+        worked_dates = set()
+        for log in history_data['prev_week_logs']:
+            if log.user_id == user.id:
+                worked_dates.add(log.date)
+
+        for shift in history_data['prev_week_shifts']:
+            if shift.user_id == user.id and shift.role == 'main':
+                if shift.date not in worked_dates:
+                    absent_count += 1
+        score += (absent_count * 4.0)
 
     # j. Add 2 points for each day staff is assigned to the same shop in the current week.
     # Removed to fix "flat score" issue (User wants visible deduction per duty).
@@ -133,6 +144,46 @@ def calculate_assignment_score(user, shop, date, history_data, current_week_assi
     if min_duty_count_among_eligible is not None:
         if current_duty_count == min_duty_count_among_eligible:
             score += 1.0
+
+    # NEW CRITERIA
+
+    # +1 if user is assigned to the same shop the previous day within the week
+    # Calculate previous day date
+    prev_day_date = date - datetime.timedelta(days=1)
+    # Check if assigned to 'shop' on prev_day_date in current_week_assignments
+    # Since current_week_assignments stores (user_id, shop_id, date)
+    was_at_same_shop_prev_day = False
+    for uid, sid, d in current_week_assignments.assignments:
+        if uid == user.id and sid == shop.id and d == prev_day_date:
+            was_at_same_shop_prev_day = True
+            break
+    if was_at_same_shop_prev_day:
+        score += 1.0
+
+    # +10.0 if user already has 2 days off in the current week
+    # "Current week" context: The generator processes a full week (Mon-Sun).
+    # We are at 'date'. We want to know how many days PRIOR to 'date' in THIS week the user had NO duty assignment.
+    # Find start of this week for the given 'date'. Assuming 'date' is within the week being generated.
+    # Actually, the generator iterates days 0..6. 'date' moves forward.
+    # So we can just check days from (date - day_offset) up to (date - 1).
+    # But we might not know day_offset easily here without passing it.
+    # Or simply: Week starts on Monday.
+    # days_off_count = 0.
+    # Iterate d from (date - weekday) to (date - 1).
+    days_to_check = []
+    current_weekday = date.weekday() # 0=Mon, ...
+    for i in range(current_weekday):
+        # i goes from 0 to current_weekday-1
+        check_date = date - datetime.timedelta(days=(current_weekday - i))
+        days_to_check.append(check_date)
+
+    days_off_count = 0
+    for d in days_to_check:
+        if not current_week_assignments.is_assigned_on_day(user.id, d):
+            days_off_count += 1
+
+    if days_off_count >= 2:
+        score += 10.0
 
     return score
 
