@@ -2,69 +2,90 @@
 {% load schedule_extras %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-             {% if schedule %}
-                <h2>Schedule for Week of {{ schedule.week_start_date }}</h2>
-             {% else %}
-                <h2>My Schedule</h2>
-             {% endif %}
+<div class="flex flex-col space-y-6">
+    <div class="flex justify-between items-center">
+         {% if schedule %}
+            <h2 class="text-2xl font-bold text-primary">Schedule for Week of {{ schedule.week_start_date }}</h2>
+         {% else %}
+            <h2 class="text-2xl font-bold text-primary">My Schedule</h2>
+         {% endif %}
 
-             {% if user.is_superuser or user.tier == 'supervisor' or user.tier == 'administrator' %}
-                <a href="{% url 'scheduling:schedule_history_list' %}" class="btn btn-outline-primary">
-                    Published Schedule History
-                </a>
-             {% endif %}
-        </div>
+         {% if user.is_superuser or user.tier == 'supervisor' or user.tier == 'administrator' %}
+            <a href="{% url 'scheduling:schedule_history_list' %}" class="inline-flex items-center px-4 py-2 border border-primary text-sm font-medium rounded-md text-primary bg-white hover:bg-primary hover:text-white transition-colors">
+                Published Schedule History
+            </a>
+         {% endif %}
+    </div>
 
-        {% if schedule %}
-            {% if not schedule.is_published %}
-                <div class="alert alert-warning">This schedule is currently a DRAFT and has not been published.</div>
-            {% endif %}
+    {% if schedule %}
+        {% if not schedule.is_published %}
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-yellow-700">
+                            This schedule is currently a DRAFT and has not been published.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
 
-            <div class="table-responsive">
-                <table class="table table-bordered table-sm text-center">
-                    <thead class="table-dark">
+        <div class="bg-white shadow overflow-hidden border border-gray-200 rounded-lg">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-center border-collapse">
+                    <thead class="bg-primary text-white">
                         <tr>
-                            <th>Date</th>
+                            <th class="px-4 py-2 border border-primary-dark">Date</th>
                             {% for shop in shops %}
                                 {% if shop.name == 'Roving' %}
-                                    <th colspan="2" class="table-warning text-dark">{{ shop.name }}</th>
+                                    <th colspan="2" class="px-4 py-2 border border-primary-dark bg-yellow-100 text-yellow-900 font-bold">{{ shop.name }}</th>
                                 {% else %}
-                                    <th>{{ shop.name }}</th>
+                                    <th class="px-4 py-2 border border-primary-dark">{{ shop.name }}</th>
                                 {% endif %}
                             {% endfor %}
                         </tr>
                         <tr>
-                            <th></th>
+                            <th class="px-4 py-2 border border-primary-dark"></th>
                             {% for shop in shops %}
                                 {% if shop.name == 'Roving' %}
-                                    <th class="table-warning text-dark">Duty</th>
-                                    <th class="table-warning text-dark">Standby</th>
+                                    <th class="px-4 py-2 border border-primary-dark bg-yellow-100 text-yellow-900 text-sm">Duty</th>
+                                    <th class="px-4 py-2 border border-primary-dark bg-yellow-100 text-yellow-900 text-sm">Standby</th>
                                 {% else %}
-                                    <th>Duty</th>
+                                    <th class="px-4 py-2 border border-primary-dark text-sm">Duty</th>
                                 {% endif %}
                             {% endfor %}
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="bg-white">
                         {% for date in dates %}
-                        <tr>
-                            <td class="fw-bold">{{ date|date:"D, M d" }}</td>
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-4 border border-gray-200 font-bold text-gray-900 whitespace-nowrap">{{ date|date:"D, M d" }}</td>
                             {% for shop in shops %}
                                 <!-- Duty Staff -->
-                                <td {% if shop.name == 'Roving' %}class="table-warning"{% endif %}>
+                                <td class="px-2 py-4 border border-gray-200 align-top {% if shop.name == 'Roving' %}bg-yellow-50{% endif %}">
+                                    <div class="flex flex-col space-y-1 items-center">
                                     {% for user in matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                        <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary text-white">
+                                            {{ user.get_short_name_for_schedule }}
+                                        </span>
                                     {% endfor %}
+                                    </div>
                                 </td>
                                 <!-- Standby Staff -->
                                 {% if shop.name == 'Roving' %}
-                                <td class="table-warning">
+                                <td class="px-2 py-4 border border-gray-200 align-top bg-yellow-50">
+                                    <div class="flex flex-col space-y-1 items-center">
                                     {% for user in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                        <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500 text-white">
+                                            {{ user.get_short_name_for_schedule }}
+                                        </span>
                                     {% endfor %}
+                                    </div>
                                 </td>
                                 {% endif %}
                             {% endfor %}
@@ -73,24 +94,56 @@
                     </tbody>
                 </table>
             </div>
+        </div>
 
-            {% if change_logs %}
-            <div class="mt-4">
-                <h4>Change Log</h4>
-                <ul class="list-group">
+        {% if change_logs %}
+        <div class="mt-8">
+            <h4 class="text-lg font-bold text-primary mb-4">Change Log</h4>
+            <div class="bg-white shadow overflow-hidden sm:rounded-md border border-gray-200">
+                <ul role="list" class="divide-y divide-gray-200">
                     {% for log in change_logs %}
-                        <li class="list-group-item">
-                            <small class="text-muted">{{ log.created_at }}</small>
-                            <strong>{{ log.user.username|default:"System" }}:</strong> {{ log.message }}
+                        <li>
+                            <div class="px-4 py-4 sm:px-6">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-sm font-medium text-primary truncate">
+                                        {{ log.user.username|default:"System" }}
+                                    </p>
+                                    <div class="ml-2 flex-shrink-0 flex">
+                                        <p class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                            {{ log.created_at|date:"M d, H:i" }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="mt-2 sm:flex sm:justify-between">
+                                    <div class="sm:flex">
+                                        <p class="flex items-center text-sm text-gray-500">
+                                            {{ log.message }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </li>
                     {% endfor %}
                 </ul>
             </div>
-            {% endif %}
-
-        {% else %}
-            <div class="alert alert-info">No schedule available for the upcoming week.</div>
+        </div>
         {% endif %}
-    </div>
+
+    {% else %}
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-blue-700">
+                        No schedule available for the upcoming week.
+                    </p>
+                </div>
+            </div>
+        </div>
+    {% endif %}
 </div>
 {% endblock %}

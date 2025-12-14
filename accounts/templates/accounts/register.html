@@ -3,32 +3,36 @@
 {% block title %}Register - iMDiz HRIS{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">Register Account</h4>
+<div class="flex justify-center items-center py-10">
+    <div class="w-full max-w-2xl">
+        <div class="card shadow-lg">
+            <div class="card-header bg-primary text-white text-center py-4">
+                <h4 class="text-xl font-bold mb-0 text-white">Register Account</h4>
             </div>
-            <div class="card-body">
-                <form method="post" enctype="multipart/form-data">
+            <div class="card-body p-8 bg-white">
+                <form method="post" enctype="multipart/form-data" class="space-y-4">
                     {% csrf_token %}
 
                     {% for field in form %}
-                        <div class="mb-3">
-                            <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                        <div>
+                            <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
                             {{ field }}
                             {% if field.errors %}
-                                <div class="text-danger small">{{ field.errors.0 }}</div>
+                                <div class="text-red-600 text-xs mt-1">{{ field.errors.0 }}</div>
                             {% endif %}
                             {% if field.help_text %}
-                                <div class="form-text">{{ field.help_text }}</div>
+                                <div class="text-gray-500 text-xs mt-1">{{ field.help_text }}</div>
                             {% endif %}
                         </div>
                     {% endfor %}
 
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">Register</button>
-                        <a href="{% url 'login' %}" class="btn btn-outline-secondary">Back to Login</a>
+                    <div class="flex flex-col gap-3 mt-8">
+                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                            Register
+                        </button>
+                        <a href="{% url 'login' %}" class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors text-center">
+                            Back to Login
+                        </a>
                     </div>
                 </form>
             </div>
@@ -37,9 +41,18 @@
 </div>
 
 <script>
-    // Add Bootstrap classes to form fields
-    document.querySelectorAll('input').forEach(input => {
-        input.classList.add('form-control');
+    // Styles are applied via @layer base in base.html mostly, but we can enforce some if needed
+    // However, the base.html input styles should cover standard inputs.
+    // File inputs might need specific tweaking if they look bad.
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    fileInputs.forEach(input => {
+        input.classList.add('block', 'w-full', 'text-sm', 'text-gray-500',
+            'file:mr-4', 'file:py-2', 'file:px-4',
+            'file:rounded-md', 'file:border-0',
+            'file:text-sm', 'file:font-semibold',
+            'file:bg-primary', 'file:text-white',
+            'hover:file:bg-secondary'
+        );
     });
 </script>
 {% endblock %}
