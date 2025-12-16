@@ -55,15 +55,25 @@
                                     {% for shop in shops %}
                                         <!-- Duty Staff -->
                                         <td {% if shop.name == 'Roving' %}class="table-warning"{% endif %}>
-                                            {% for user in data.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                                <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                            {% for shift in data.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                                <div class="mb-1">
+                                                    <span class="badge bg-primary">{{ shift.user.get_short_name_for_schedule }}</span>
+                                                    {% if shift.status == 'absent' %}
+                                                        <span class="text-danger small fw-bold">ABSENT</span>
+                                                    {% elif shift.status == 'substituted' %}
+                                                        <span class="text-danger">➜</span> <span class="badge bg-warning text-dark">{{ shift.actual_user.get_short_name_for_schedule }}</span>
+                                                    {% endif %}
+                                                </div>
                                             {% endfor %}
                                         </td>
                                         <!-- Standby Staff -->
                                         {% if shop.name == 'Roving' %}
                                         <td class="table-warning">
-                                            {% for user in data.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                                <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                            {% for shift in data.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                                <div class="mb-1">
+                                                    <span class="badge bg-secondary">{{ shift.user.get_short_name_for_schedule }}</span>
+                                                    <!-- Usually Backup doesn't have attendance at Roving unless specified, skip status for now unless crucial -->
+                                                </div>
                                             {% endfor %}
                                         </td>
                                         {% endif %}

@@ -52,6 +52,7 @@ class Shift(models.Model):
     date = models.DateField()
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='main')
     score = models.FloatField(null=True, blank=True) # Score at the time of assignment
+    score_breakdown = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ['date', 'shop']

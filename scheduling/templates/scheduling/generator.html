@@ -72,8 +72,8 @@
                                             <!-- Roving Duty -->
                                             <td class="table-warning">
                                                 {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                                    <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
-                                                        {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
+                                                    <div class="badge bg-primary mb-1 position-relative">
+                                                        {{ shift.user.get_short_name_for_schedule }}
                                                         <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
                                                         {% if not week.schedule.is_published or request.user.is_superuser %}
                                                             <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
@@ -87,7 +87,7 @@
                                             <!-- Standby (Roving Backup) -->
                                             <td class="table-info">
                                                 {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                                    <div class="badge bg-secondary mb-1 position-relative" title="Priority Score (neg prev duty): {{ shift.score|floatformat:1 }}">
+                                                    <div class="badge bg-secondary mb-1 position-relative">
                                                         {{ shift.user.get_short_name_for_schedule }}
                                                         {% if not week.schedule.is_published or request.user.is_superuser %}
                                                             <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
@@ -102,11 +102,15 @@
                                             <!-- Regular Shop Duty -->
                                             <td>
                                                 {% for shift in week.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                                    <div class="badge bg-primary mb-1 position-relative" title="Priority Score: {{ shift.score|floatformat:1 }}">
+                                                    <div class="badge bg-primary mb-1 position-relative cursor-pointer"
+                                                         {% if shift.score_breakdown %}
+                                                         onclick="openScoreModal('{{ shift.user.get_short_name_for_schedule }}', '{{ shift.score|floatformat:1 }}', {{ shift.score_breakdown|safe|default:'{}' }})"
+                                                         style="cursor: pointer;"
+                                                         {% endif %}>
                                                         {{ shift.user.get_short_name_for_schedule }} ({{ shift.score|floatformat:1 }})
                                                         <span class="badge bg-light text-dark rounded-pill ms-1" title="Duty Shifts this week">{{ week.duty_counts|get_item:shift.user.id|default:0 }}</span>
                                                         {% if not week.schedule.is_published or request.user.is_superuser %}
-                                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;">x</a>
+                                                            <a href="{% url 'scheduling:shift_delete' shift.id %}" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.5em;" onclick="event.stopPropagation();">x</a>
                                                         {% endif %}
                                                     </div><br>
                                                 {% endfor %}
@@ -144,4 +148,78 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Score Breakdown Modal -->
+<div class="modal fade" id="scoreModal" tabindex="-1" aria-labelledby="scoreModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scoreModalLabel">Score Breakdown</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <h6 id="modalUser"></h6>
+        <div class="table-responsive">
+            <table class="table table-striped table-sm">
+                <thead>
+                    <tr>
+                        <th>Criteria</th>
+                        <th class="text-end">Points</th>
+                    </tr>
+                </thead>
+                <tbody id="modalBreakdownBody">
+                    <!-- Populated by JS -->
+                </tbody>
+                <tfoot>
+                    <tr class="fw-bold">
+                        <td>Total Score</td>
+                        <td class="text-end" id="modalTotalScore"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    function openScoreModal(username, totalScore, breakdown) {
+        document.getElementById('modalUser').innerText = 'Breakdown for ' + username;
+        document.getElementById('modalTotalScore').innerText = totalScore;
+
+        const tbody = document.getElementById('modalBreakdownBody');
+        tbody.innerHTML = '';
+
+        // Handle if breakdown is string (should be object from Django template due to safe filter, but just in case)
+        if (typeof breakdown === 'string') {
+            try {
+                breakdown = JSON.parse(breakdown.replace(/'/g, '"')); // Simple fix for python dict string
+            } catch(e) {
+                console.error("Error parsing breakdown", e);
+            }
+        }
+
+        for (const [key, value] of Object.entries(breakdown)) {
+            const row = document.createElement('tr');
+            const cellKey = document.createElement('td');
+            cellKey.innerText = key;
+            const cellValue = document.createElement('td');
+            cellValue.className = 'text-end';
+            cellValue.innerText = value > 0 ? '+' + value : value;
+            if (value < 0) cellValue.classList.add('text-danger');
+            else if (value > 0) cellValue.classList.add('text-success');
+
+            row.appendChild(cellKey);
+            row.appendChild(cellValue);
+            tbody.appendChild(row);
+        }
+
+        var myModal = new bootstrap.Modal(document.getElementById('scoreModal'));
+        myModal.show();
+    }
+</script>
 {% endblock %}

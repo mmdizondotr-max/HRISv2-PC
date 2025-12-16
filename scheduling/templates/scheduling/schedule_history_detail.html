@@ -43,9 +43,14 @@
                                     {% for date in dates %}
                                         <td class="align-middle table-warning">
                                             {% with assignments=matrix|get_item:date|get_item:shop.id %}
-                                                {% for user in assignments.main %}
+                                                {% for shift in assignments.main %}
                                                     <div class="badge bg-dark text-wrap mb-1" style="width: 100%;">
-                                                        {{ user.get_short_name_for_schedule }}
+                                                        {{ shift.user.get_short_name_for_schedule }}
+                                                        {% if shift.status == 'absent' %}
+                                                            <br><span class="text-danger small">ABSENT</span>
+                                                        {% elif shift.status == 'substituted' %}
+                                                            <br><span class="text-danger">➜</span> <span class="badge bg-warning text-dark">{{ shift.actual_user.get_short_name_for_schedule }}</span>
+                                                        {% endif %}
                                                     </div>
                                                 {% endfor %}
                                             {% endwith %}
@@ -58,9 +63,9 @@
                                     {% for date in dates %}
                                         <td class="align-middle">
                                             {% with assignments=matrix|get_item:date|get_item:shop.id %}
-                                                {% for user in assignments.backup %}
+                                                {% for shift in assignments.backup %}
                                                     <div class="badge bg-info text-dark text-wrap mb-1" style="width: 100%;">
-                                                        {{ user.get_short_name_for_schedule }}
+                                                        {{ shift.user.get_short_name_for_schedule }}
                                                     </div>
                                                 {% endfor %}
                                             {% endwith %}
@@ -75,9 +80,14 @@
                                     {% for date in dates %}
                                         <td class="align-middle">
                                             {% with assignments=matrix|get_item:date|get_item:shop.id %}
-                                                {% for user in assignments.main %}
+                                                {% for shift in assignments.main %}
                                                     <div class="badge bg-primary text-wrap mb-1" style="width: 100%;">
-                                                        {{ user.get_short_name_for_schedule }}
+                                                        {{ shift.user.get_short_name_for_schedule }}
+                                                        {% if shift.status == 'absent' %}
+                                                            <br><span class="text-danger small">ABSENT</span>
+                                                        {% elif shift.status == 'substituted' %}
+                                                            <br><span class="text-danger">➜</span> <span class="badge bg-warning text-dark">{{ shift.actual_user.get_short_name_for_schedule }}</span>
+                                                        {% endif %}
                                                     </div>
                                                 {% endfor %}
                                             {% endwith %}
