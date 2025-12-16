@@ -43,14 +43,6 @@ def my_schedule(request):
     start_of_current_week = today - datetime.timedelta(days=today.weekday())
     start_of_next_week = start_of_current_week + datetime.timedelta(days=7)
 
-    schedule = Schedule.objects.filter(week_start_date=start_of_next_week, is_published=True).first()
-    if not schedule:
-        schedule = Schedule.objects.filter(week_start_date=start_of_current_week, is_published=True).first()
-
-    if not schedule:
-        return render(request, 'scheduling/my_schedule.html', {'schedule': None})
-
-    dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
     # Ensure Roving is first for display consistency
     shops_qs = Shop.objects.filter(is_active=True)
     roving = shops_qs.filter(name='Roving').first()
@@ -60,26 +52,48 @@ def my_schedule(request):
     else:
         shops = others
 
-    matrix = {}
-    for d in dates:
-        matrix[d] = {}
-        for s in shops:
-            matrix[d][s.id] = {'main': [], 'backup': []}
+    schedules_data = []
 
-    shifts = schedule.shifts.all().select_related('user', 'shop')
-    for shift in shifts:
-        if shift.date in matrix and shift.shop.id in matrix[shift.date]:
-             if shift.role == 'main':
-                 matrix[shift.date][shift.shop.id]['main'].append(shift.user)
-             else:
-                 matrix[shift.date][shift.shop.id]['backup'].append(shift.user)
+    def build_schedule_data(schedule_obj):
+        if not schedule_obj:
+            return None
+        dates = [schedule_obj.week_start_date + datetime.timedelta(days=i) for i in range(7)]
+        matrix = {}
+        for d in dates:
+            matrix[d] = {}
+            for s in shops:
+                matrix[d][s.id] = {'main': [], 'backup': []}
+
+        shifts = schedule_obj.shifts.all().select_related('user', 'shop')
+        for shift in shifts:
+            if shift.date in matrix and shift.shop.id in matrix[shift.date]:
+                if shift.role == 'main':
+                    matrix[shift.date][shift.shop.id]['main'].append(shift.user)
+                else:
+                    matrix[shift.date][shift.shop.id]['backup'].append(shift.user)
+
+        return {
+            'schedule': schedule_obj,
+            'dates': dates,
+            'matrix': matrix,
+            'change_logs': schedule_obj.change_logs.all().order_by('-created_at')
+        }
+
+    # Current Week
+    current_schedule = Schedule.objects.filter(week_start_date=start_of_current_week, is_published=True).first()
+    data_curr = build_schedule_data(current_schedule)
+    if data_curr:
+        schedules_data.append(data_curr)
+
+    # Next Week
+    next_schedule = Schedule.objects.filter(week_start_date=start_of_next_week, is_published=True).first()
+    data_next = build_schedule_data(next_schedule)
+    if data_next:
+        schedules_data.append(data_next)
 
     return render(request, 'scheduling/my_schedule.html', {
-        'schedule': schedule,
-        'dates': dates,
-        'shops': shops,
-        'matrix': matrix,
-        'change_logs': schedule.change_logs.all().order_by('-created_at')
+        'schedules_data': schedules_data,
+        'shops': shops
     })
 
 @login_required

@@ -5,11 +5,7 @@
 <div class="row">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-3">
-             {% if schedule %}
-                <h2>Schedule for Week of {{ schedule.week_start_date }}</h2>
-             {% else %}
-                <h2>My Schedule</h2>
-             {% endif %}
+             <h2>My Schedule</h2>
 
              {% if user.is_superuser or user.tier == 'supervisor' or user.tier == 'administrator' %}
                 <a href="{% url 'scheduling:schedule_history_list' %}" class="btn btn-outline-primary">
@@ -18,78 +14,83 @@
              {% endif %}
         </div>
 
-        {% if schedule %}
-            {% if not schedule.is_published %}
-                <div class="alert alert-warning">This schedule is currently a DRAFT and has not been published.</div>
-            {% endif %}
+        {% if schedules_data %}
+            {% for data in schedules_data %}
+                <div class="mb-5">
+                    <h3 class="mb-3">Schedule for Week of {{ data.schedule.week_start_date|date:"F j, Y" }}</h3>
 
-            <div class="table-responsive">
-                <table class="table table-bordered table-sm text-center">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Date</th>
-                            {% for shop in shops %}
-                                {% if shop.name == 'Roving' %}
-                                    <th colspan="2" class="table-warning text-dark">{{ shop.name }}</th>
-                                {% else %}
-                                    <th>{{ shop.name }}</th>
-                                {% endif %}
-                            {% endfor %}
-                        </tr>
-                        <tr>
-                            <th></th>
-                            {% for shop in shops %}
-                                {% if shop.name == 'Roving' %}
-                                    <th class="table-warning text-dark">Duty</th>
-                                    <th class="table-warning text-dark">Standby</th>
-                                {% else %}
-                                    <th>Duty</th>
-                                {% endif %}
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for date in dates %}
-                        <tr>
-                            <td class="fw-bold">{{ date|date:"D, M d" }}</td>
-                            {% for shop in shops %}
-                                <!-- Duty Staff -->
-                                <td {% if shop.name == 'Roving' %}class="table-warning"{% endif %}>
-                                    {% for user in matrix|get_item:date|get_item:shop.id|get_item:'main' %}
-                                        <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                    {% if not data.schedule.is_published %}
+                        <div class="alert alert-warning">This schedule is currently a DRAFT and has not been published.</div>
+                    {% endif %}
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm text-center">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Date</th>
+                                    {% for shop in shops %}
+                                        {% if shop.name == 'Roving' %}
+                                            <th colspan="2" class="table-warning text-dark">{{ shop.name }}</th>
+                                        {% else %}
+                                            <th>{{ shop.name }}</th>
+                                        {% endif %}
                                     {% endfor %}
-                                </td>
-                                <!-- Standby Staff -->
-                                {% if shop.name == 'Roving' %}
-                                <td class="table-warning">
-                                    {% for user in matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
-                                        <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                </tr>
+                                <tr>
+                                    <th></th>
+                                    {% for shop in shops %}
+                                        {% if shop.name == 'Roving' %}
+                                            <th class="table-warning text-dark">Duty</th>
+                                            <th class="table-warning text-dark">Standby</th>
+                                        {% else %}
+                                            <th>Duty</th>
+                                        {% endif %}
                                     {% endfor %}
-                                </td>
-                                {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for date in data.dates %}
+                                <tr>
+                                    <td class="fw-bold">{{ date|date:"D, M d" }}</td>
+                                    {% for shop in shops %}
+                                        <!-- Duty Staff -->
+                                        <td {% if shop.name == 'Roving' %}class="table-warning"{% endif %}>
+                                            {% for user in data.matrix|get_item:date|get_item:shop.id|get_item:'main' %}
+                                                <div class="badge bg-primary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                            {% endfor %}
+                                        </td>
+                                        <!-- Standby Staff -->
+                                        {% if shop.name == 'Roving' %}
+                                        <td class="table-warning">
+                                            {% for user in data.matrix|get_item:date|get_item:shop.id|get_item:'backup' %}
+                                                <div class="badge bg-secondary mb-1">{{ user.get_short_name_for_schedule }}</div><br>
+                                            {% endfor %}
+                                        </td>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if data.change_logs %}
+                    <div class="mt-4">
+                        <h4>Change Log</h4>
+                        <ul class="list-group">
+                            {% for log in data.change_logs %}
+                                <li class="list-group-item">
+                                    <small class="text-muted">{{ log.created_at }}</small>
+                                    <strong>{{ log.user.username|default:"System" }}:</strong> {{ log.message }}
+                                </li>
                             {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if change_logs %}
-            <div class="mt-4">
-                <h4>Change Log</h4>
-                <ul class="list-group">
-                    {% for log in change_logs %}
-                        <li class="list-group-item">
-                            <small class="text-muted">{{ log.created_at }}</small>
-                            <strong>{{ log.user.username|default:"System" }}:</strong> {{ log.message }}
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
         {% else %}
-            <div class="alert alert-info">No schedule available for the upcoming week.</div>
+            <div class="alert alert-info">No schedule available.</div>
         {% endif %}
     </div>
 </div>
