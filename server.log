@@ -4,59 +4,148 @@
   warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
 Watching for file changes with StatReloader
 Not Found: /accounts/login/
-[12/Dec/2025 14:34:23] "GET /accounts/login/ HTTP/1.1" 404 4683
+[16/Dec/2025 17:36:17] "GET /accounts/login/ HTTP/1.1" 404 4683
 Not Found: /accounts/login/
-[12/Dec/2025 14:35:01] "HEAD /accounts/login/ HTTP/1.1" 404 0
-[12/Dec/2025 14:35:37] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:35:37] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 14:35:38] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 14:35:39] "GET /attendance/ HTTP/1.1" 200 7712
-[12/Dec/2025 14:35:39] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:35:39] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:35:39] "GET /attendance/dtr/ HTTP/1.1" 200 8779
-[12/Dec/2025 14:35:39] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:35:39] "GET / HTTP/1.1" 200 4524
-Internal Server Error: /scheduling/reset-data/
-Traceback (most recent call last):
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
-    response = get_response(request)
-               ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
-    response = wrapped_callback(request, *callback_args, **callback_kwargs)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/contrib/auth/decorators.py", line 56, in _view_wrapper
-    test_pass = test_func(request.user)
-                ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/app/scheduling/views.py", line 511, in <lambda>
-    @user_passes_test(lambda u: u.tier == 'administrator' or u.is_superuser)
-                                ^^^^^^
-  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/utils/functional.py", line 253, in inner
-    return func(_wrapped, *args)
-           ^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'AnonymousUser' object has no attribute 'tier'
-[12/Dec/2025 14:35:39] "GET /scheduling/reset-data/ HTTP/1.1" 500 72451
-/app/scheduling/views.py changed, reloading.
-Performing system checks...
-
-System check identified no issues (0 silenced).
-December 12, 2025 - 14:33:25
-Django version 6.0, using settings 'hris_project.settings'
-Starting development server at http://0.0.0.0:8000/
-Quit the server with CONTROL-C.
-
-WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
-For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
-/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/django/db/backends/utils.py:98: RuntimeWarning: Accessing the database during app initialization is discouraged. To fix this warning, avoid executing queries in AppConfig.ready() or when your app modules are imported.
-  warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
-Watching for file changes with StatReloader
-[12/Dec/2025 14:36:31] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:36:31] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
-[12/Dec/2025 14:36:32] "POST / HTTP/1.1" 302 0
-[12/Dec/2025 14:36:32] "GET /attendance/ HTTP/1.1" 200 7712
-[12/Dec/2025 14:36:32] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:36:32] "GET /attendance/dtr/ HTTP/1.1" 200 8779
-[12/Dec/2025 14:36:32] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:36:32] "POST /logout/ HTTP/1.1" 302 0
-[12/Dec/2025 14:36:32] "GET /scheduling/reset-data/ HTTP/1.1" 302 0
-[12/Dec/2025 14:36:32] "GET / HTTP/1.1" 200 4524
-[12/Dec/2025 14:36:32] "GET /?next=/scheduling/reset-data/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:38:23] "GET /accounts/login/ HTTP/1.1" 404 4683
+[16/Dec/2025 17:40:15] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:40:15] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:40:17] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:40:19] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:40:20] "GET /scheduling/load-test/ HTTP/1.1" 200 6685
+[16/Dec/2025 17:40:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:40:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:40:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:40:20] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:40:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:40:20] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:40:20] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:40:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:40:20] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:40:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:18] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:18] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:41:19] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:41:20] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:41:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:20] "GET /scheduling/load-test/ HTTP/1.1" 200 6685
+[16/Dec/2025 17:41:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:21] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:21] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:21] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:21] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:21] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:21] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:41:21] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:41:21] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:14] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:14] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:42:15] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:42:16] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:42:16] "GET /scheduling/load-test/ HTTP/1.1" 200 6685
+[16/Dec/2025 17:42:16] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:16] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:16] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:16] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:17] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:17] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:17] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:17] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:17] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:17] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:42:17] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:42:17] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:16] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:16] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:43:17] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:43:17] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:43:18] "GET /scheduling/load-test/ HTTP/1.1" 200 6685
+[16/Dec/2025 17:43:18] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:18] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:18] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:18] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:18] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:18] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:18] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:19] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:43:20] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:43:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:20] "GET /scheduling/my-schedule/ HTTP/1.1" 200 8013
+[16/Dec/2025 17:43:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:20] "POST /logout/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:20] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:43:20] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:43:20] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:45:22] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:45:23] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:45:24] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:45:24] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:45:24] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:45:25] "GET /scheduling/load-test/ HTTP/1.1" 200 6685
+[16/Dec/2025 17:45:25] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:45:25] "GET /scheduling/my-schedule/ HTTP/1.1" 200 8013
+[16/Dec/2025 17:45:25] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:45:25] "GET /scheduling/history/ HTTP/1.1" 200 5864
+[16/Dec/2025 17:45:25] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:24] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:46:24] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:25] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:46:26] "GET /attendance/ HTTP/1.1" 200 7486
+[16/Dec/2025 17:46:26] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:26] "GET /scheduling/generator/ HTTP/1.1" 200 53636
+[16/Dec/2025 17:46:26] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:27] "POST /scheduling/generator/ HTTP/1.1" 302 0
+[16/Dec/2025 17:46:27] "GET /scheduling/generator/ HTTP/1.1" 200 53950
+[16/Dec/2025 17:46:27] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:28] "POST /scheduling/generator/ HTTP/1.1" 302 0
+[16/Dec/2025 17:46:28] "GET /scheduling/generator/ HTTP/1.1" 200 50991
+[16/Dec/2025 17:46:28] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:29] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:46:29] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:46:29] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:46:30] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:46:30] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:46:30] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:01] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:48:01] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:02] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:48:02] "GET /attendance/ HTTP/1.1" 200 7795
+[16/Dec/2025 17:48:02] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:03] "GET /scheduling/generator/ HTTP/1.1" 200 83847
+[16/Dec/2025 17:48:03] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:04] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:48:04] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:48:04] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:04] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:48:04] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:48:04] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:57] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:48:57] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:58] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:48:58] "GET /attendance/ HTTP/1.1" 200 7795
+[16/Dec/2025 17:48:58] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:48:59] "GET /scheduling/generator/ HTTP/1.1" 200 83847
+[16/Dec/2025 17:48:59] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:00] "GET /scheduling/my-schedule/ HTTP/1.1" 302 0
+[16/Dec/2025 17:49:00] "GET /?next=/scheduling/my-schedule/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:49:00] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:00] "GET /scheduling/history/ HTTP/1.1" 302 0
+[16/Dec/2025 17:49:00] "GET /?next=/scheduling/history/ HTTP/1.1" 200 4524
+[16/Dec/2025 17:49:00] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:41] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:49:41] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:42] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:49:43] "GET /attendance/ HTTP/1.1" 200 8029
+[16/Dec/2025 17:49:43] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:43] "GET /scheduling/my-schedule/ HTTP/1.1" 200 53861
+[16/Dec/2025 17:49:43] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:49:43] "GET /scheduling/history/ HTTP/1.1" 200 6887
+[16/Dec/2025 17:49:43] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:52:03] "GET / HTTP/1.1" 200 4524
+[16/Dec/2025 17:52:04] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:52:05] "POST / HTTP/1.1" 302 0
+[16/Dec/2025 17:52:05] "GET /attendance/ HTTP/1.1" 200 8029
+[16/Dec/2025 17:52:05] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811
+[16/Dec/2025 17:52:06] "GET /scheduling/my-schedule/ HTTP/1.1" 200 53861
+[16/Dec/2025 17:52:06] "GET /static/img/iMDiz.png HTTP/1.1" 200 1990811

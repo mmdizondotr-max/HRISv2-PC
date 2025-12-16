@@ -98,7 +98,7 @@ def my_schedule(request):
 
                 if found:
                     status_dict['actual'] = shift.user
-                    status_dict['status'] = 'present'
+                    status_dict['status'] = 'reported'
                 else:
                      # Absent Logic: "Only appears if date has passed"
                      if shift.date < today:
@@ -140,18 +140,18 @@ def my_schedule(request):
 
                         if log_obj:
                              if log_obj.time_in and log_obj.time_out:
-                                 shift.status = 'present'
+                                 shift.status = 'reported'
                              elif log_obj.time_in and not log_obj.time_out:
                                  if d == today:
                                      shift.status = 'ongoing' # Display "Ongoing"
                                  elif d < today:
                                      shift.status = 'incomplete' # Display "Incomplete Log"
                                  else:
-                                     shift.status = 'present' # Should not happen for future
+                                     shift.status = 'reported' # Should not happen for future
                              else:
-                                 shift.status = 'present' # Fallback
+                                 shift.status = 'reported' # Fallback
                         else:
-                             shift.status = 'present'
+                             shift.status = 'reported'
 
                         matched_logs.append(match)
                     else:
@@ -232,9 +232,12 @@ def my_schedule(request):
     if data_next:
         schedules_data.append(data_next)
 
+    all_users = User.objects.filter(is_active=True, is_approved=True)
     return render(request, 'scheduling/my_schedule.html', {
         'schedules_data': schedules_data,
-        'shops': shops
+        'shops': shops,
+        'today': today,
+        'all_users': all_users,
     })
 
 @login_required
@@ -302,10 +305,13 @@ def schedule_history_detail(request, schedule_id):
              is_present = any(u.id == shift.user.id for u in shop_logs)
 
              if is_present:
-                 shift.status = 'present'
+                 shift.status = 'reported'
                  shift.actual_user = shift.user
              else:
-                 shift.status = 'absent'
+                 if shift.date < timezone.localdate():
+                     shift.status = 'absent'
+                 else:
+                     shift.status = ''
                  shift.actual_user = None
 
              if shift.role == 'main':
@@ -696,6 +702,217 @@ def shift_add(request, schedule_id, date, shop_id, role):
     return render(request, 'scheduling/shift_add.html', {
         'form': form, 'date': target_date, 'shop': shop, 'role': role
     })
+
+@login_required
+def regenerate_remaining_week(request, schedule_id):
+    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
+        return HttpResponseForbidden()
+
+    schedule = get_object_or_404(Schedule, id=schedule_id)
+    today = timezone.localdate()
+    start_date = today + datetime.timedelta(days=1)
+    week_start = schedule.week_start_date
+    week_end = week_start + datetime.timedelta(days=6)
+
+    if start_date > week_end:
+        messages.warning(request, "No remaining days in this week to regenerate.")
+        return redirect('scheduling:my_schedule')
+
+    # 1. Clear future shifts
+    shifts_to_delete = Shift.objects.filter(schedule=schedule, date__gte=start_date)
+    shifts_to_delete.delete()
+
+    ScheduleChangeLog.objects.create(
+        schedule=schedule,
+        user=request.user,
+        message=f"Regenerated schedule from {start_date} onwards."
+    )
+
+    # 2. Prepare Context for Generation
+    # a. Shops
+    shops_qs = Shop.objects.filter(is_active=True)
+    roving = shops_qs.filter(name='Roving').first()
+    others = list(shops_qs.exclude(name='Roving'))
+    if roving:
+        shops = [roving] + others
+    else:
+        shops = others
+        if not roving:
+            roving, _ = Shop.objects.get_or_create(name='Roving', is_active=True)
+
+    # b. History Data (Same as generator)
+    prev_week_start = week_start - datetime.timedelta(days=7)
+    prev_week_end = week_start - datetime.timedelta(days=1)
+    prev_week_logs = list(TimeLog.objects.filter(date__range=[prev_week_start, prev_week_end]).select_related('shop'))
+    prev_week_shifts = list(Shift.objects.filter(date__range=[prev_week_start, prev_week_end]))
+
+    past_3_start = prev_week_start - datetime.timedelta(weeks=3)
+    past_3_end = prev_week_start - datetime.timedelta(days=1)
+    past_3_weeks_logs = list(TimeLog.objects.filter(date__range=[past_3_start, past_3_end]).select_related('shop'))
+
+    history_data = {
+        'prev_week_logs': prev_week_logs,
+        'prev_week_shifts': prev_week_shifts,
+        'past_3_weeks_logs': past_3_weeks_logs
+    }
+
+    use_attendance_history = prev_week_end < timezone.localdate()
+    if not use_attendance_history and prev_week_shifts:
+         simulated_logs = []
+         for shift in prev_week_shifts:
+             if shift.role == 'main':
+                 t = TimeLog(
+                     user=shift.user,
+                     shop=shift.shop,
+                     date=shift.date,
+                     time_in=datetime.time(9,0),
+                     time_out=datetime.time(17,0)
+                 )
+                 simulated_logs.append(t)
+         history_data['prev_week_logs'] = simulated_logs
+         use_attendance_history = True
+
+    # c. Initialize Current Assignments with EXISTING shifts (past days of this week)
+    current_assignments = CurrentWeekAssignments()
+    existing_shifts = Shift.objects.filter(schedule=schedule, date__lt=start_date)
+    for s in existing_shifts:
+        current_assignments.add_assignment(s.user.id, s.shop.id, s.date)
+
+    # 3. Run Generation Logic (Partial)
+    all_users = list(User.objects.filter(is_active=True, is_approved=True).select_related('preference'))
+
+    # Calc Max Duty Slots
+    max_duty_slots = 0
+    for shop in shops:
+        try:
+            req = shop.requirement.required_main_staff
+        except ShopRequirement.DoesNotExist:
+            req = 1
+        if req > max_duty_slots:
+            max_duty_slots = req
+
+    # Loop
+    for slot_idx in range(1, max_duty_slots + 1):
+        for day_offset in range(7):
+            current_date = week_start + datetime.timedelta(days=day_offset)
+
+            # Skip if before start_date
+            if current_date < start_date:
+                continue
+
+            for shop in shops:
+                try:
+                    req_main = shop.requirement.required_main_staff
+                except ShopRequirement.DoesNotExist:
+                    req_main = 1
+
+                if slot_idx > req_main:
+                    continue
+
+                potential_users = [u for u in shop.applicable_staff.all() if u.is_active and u.is_approved]
+                available_users = []
+                for user in potential_users:
+                    if not current_assignments.is_assigned_on_day(user.id, current_date):
+                        available_users.append(user)
+
+                min_duty = None
+                if available_users:
+                    duty_counts = [current_assignments.get_duty_count(u.id) for u in available_users]
+                    min_duty = min(duty_counts)
+
+                valid_candidates = []
+                for user in available_users:
+                    score, breakdown = calculate_assignment_score(user, shop, current_date, history_data, current_assignments, min_duty_count_among_eligible=min_duty, use_attendance_history=use_attendance_history)
+                    valid_candidates.append((user, score, breakdown))
+
+                if valid_candidates:
+                    random.shuffle(valid_candidates)
+                    valid_candidates.sort(key=lambda x: x[1], reverse=True)
+                    best_user, best_score, best_breakdown = valid_candidates[0]
+
+                    if shop.name == 'Roving':
+                        final_score = None
+                        final_breakdown = None
+                    else:
+                        final_score = best_score
+                        final_breakdown = best_breakdown
+
+                    Shift.objects.create(
+                        schedule=schedule,
+                        user=best_user,
+                        shop=shop,
+                        date=current_date,
+                        role='main',
+                        score=final_score,
+                        score_breakdown=final_breakdown
+                    )
+                    current_assignments.add_assignment(best_user.id, shop.id, current_date)
+
+    # Standby Loop
+    roving_shop = Shop.objects.filter(name='Roving').first()
+
+    for day_offset in range(7):
+        current_date = week_start + datetime.timedelta(days=day_offset)
+        if current_date < start_date:
+            continue
+
+        duty_users_today = set()
+        for uid, sid, d in current_assignments.assignments:
+            if d == current_date:
+                duty_users_today.add(uid)
+
+        standby_candidates = []
+        for user in all_users:
+            if user.id not in duty_users_today:
+                duty_prev_week = 0
+                for s in history_data['prev_week_shifts']:
+                    if s.user_id == user.id and s.role == 'main':
+                        duty_prev_week += 1
+                standby_candidates.append((user, duty_prev_week))
+
+        random.shuffle(standby_candidates)
+        standby_candidates.sort(key=lambda x: x[1])
+
+        for idx, (user, prev_duty) in enumerate(standby_candidates):
+            Shift.objects.create(
+                schedule=schedule,
+                user=user,
+                shop=roving_shop,
+                date=current_date,
+                role='backup',
+                score=None,
+                score_breakdown=None
+            )
+
+    messages.success(request, f"Schedule regenerated from {start_date} to {week_end}.")
+    return redirect('scheduling:my_schedule')
+
+@login_required
+def shift_update(request, shift_id):
+    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
+        return HttpResponseForbidden()
+
+    shift = get_object_or_404(Shift, id=shift_id)
+    if request.method == 'POST':
+        new_user_id = request.POST.get('user_id')
+        if new_user_id:
+            new_user = get_object_or_404(User, id=new_user_id)
+            old_user = shift.user
+            shift.user = new_user
+            shift.score = 0.0
+            shift.score_breakdown = {'Manual Override': 0.0}
+            shift.save()
+
+            ScheduleChangeLog.objects.create(
+                schedule=shift.schedule,
+                user=request.user,
+                message=f"Manually replaced {old_user} with {new_user} on {shift.date} at {shift.shop}"
+            )
+            messages.success(request, "Shift updated.")
+        else:
+            messages.error(request, "No user selected.")
+
+    return redirect('scheduling:my_schedule')
 
 def _generate_schedule(shops, schedule):
     return _generate_multi_week_schedule(shops, [schedule])

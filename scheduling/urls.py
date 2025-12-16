@@ -11,6 +11,8 @@ urlpatterns = [
     path('shift/add/<int:schedule_id>/<str:date>/<int:shop_id>/<str:role>/', views.shift_add, name='shift_add'),
     path('history/', views.schedule_history_list, name='schedule_history_list'),
     path('history/<int:schedule_id>/', views.schedule_history_detail, name='schedule_history_detail'),
+    path('regenerate-remaining/<int:schedule_id>/', views.regenerate_remaining_week, name='regenerate_remaining_week'),
+    path('shift/update/<int:shift_id>/', views.shift_update, name='shift_update'),
     path('load-test/', views.load_test_data, name='load_test_data'),
     path('reset-data/', views.reset_data, name='reset_data'),
 ]
