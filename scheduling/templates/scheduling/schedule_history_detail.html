@@ -48,6 +48,8 @@
                                                         {{ shift.user.get_short_name_for_schedule }}
                                                         {% if shift.status == 'absent' %}
                                                             <br><span class="text-danger small">ABSENT</span>
+                                                        {% elif shift.status == 'reported' %}
+                                                            <br><span class="text-success small fw-bold">REPORTED</span>
                                                         {% elif shift.status == 'substituted' %}
                                                             <br><span class="text-danger">➜</span> <span class="badge bg-warning text-dark">{{ shift.actual_user.get_short_name_for_schedule }}</span>
                                                         {% endif %}
