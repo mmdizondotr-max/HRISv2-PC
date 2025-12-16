@@ -895,9 +895,85 @@ def shift_update(request, shift_id):
     shift = get_object_or_404(Shift, id=shift_id)
     if request.method == 'POST':
         new_user_id = request.POST.get('user_id')
-        if new_user_id:
+
+        if new_user_id == 'REMOVE':
+            # Handle Removal
+            old_user = shift.user
+            schedule = shift.schedule
+            target_date = shift.date
+
+            # Delete the shift
+            shift.delete()
+
+            # Log Change
+            ScheduleChangeLog.objects.create(
+                schedule=schedule,
+                user=request.user,
+                message=f"Manually removed {old_user} from {shift.shop} on {shift.date}."
+            )
+
+            # Check if Supervisor -> Assign to Roving
+            if old_user.tier == 'supervisor':
+                roving_shop = Shop.objects.filter(name='Roving').first()
+                if roving_shop:
+                    # Check if already has a shift in Roving (to be safe)
+                    existing = Shift.objects.filter(user=old_user, date=target_date, shop=roving_shop).exists()
+                    if not existing:
+                        Shift.objects.create(
+                            schedule=schedule,
+                            user=old_user,
+                            shop=roving_shop,
+                            date=target_date,
+                            role='main', # Default for Supervisors in Roving
+                            score=None,
+                            score_breakdown={'Manual Restore to Roving': 0.0}
+                        )
+                        ScheduleChangeLog.objects.create(
+                            schedule=schedule,
+                            user=request.user,
+                            message=f"Automatically restored Supervisor {old_user} to Roving on {target_date}."
+                        )
+
+            messages.success(request, f"Removed {old_user} from shift.")
+
+        elif new_user_id:
             new_user = get_object_or_404(User, id=new_user_id)
             old_user = shift.user
+
+            # Check if New User is Supervisor -> Remove from Roving if assigned there
+            if new_user.tier == 'supervisor':
+                roving_shop = Shop.objects.filter(name='Roving').first()
+                if roving_shop:
+                     roving_shift = Shift.objects.filter(user=new_user, date=shift.date, shop=roving_shop).first()
+                     if roving_shift:
+                         roving_shift.delete()
+                         # Log implied by the update below, or maybe explicit?
+                         # Usually standard logic is just "Moved".
+
+            # Check if Old User is Supervisor -> Return to Roving?
+            # Prompt says: "Supervisors can be assigned in any slot as needed and they will be removed to Roving automatically."
+            # This refers to Case 2 (Removing from Roving when assigned elsewhere) and Case 1 (Returning to Roving when removed).
+            # If we are REPLACING old_user (supervisor) with new_user:
+            # Should old_user go back to Roving?
+            # Prompt doesn't explicitly say "Swapping", but "Changing staff".
+            # Logic: If I replace Supervisor A with Regular B. Supervisor A is now free.
+            # Should Supervisor A go to Roving? Yes, per "Supervisors ... automatically assigned to Roving".
+
+            if old_user.tier == 'supervisor':
+                roving_shop = Shop.objects.filter(name='Roving').first()
+                if roving_shop:
+                     existing = Shift.objects.filter(user=old_user, date=shift.date, shop=roving_shop).exists()
+                     if not existing:
+                         Shift.objects.create(
+                            schedule=shift.schedule,
+                            user=old_user,
+                            shop=roving_shop,
+                            date=shift.date,
+                            role='main',
+                            score=None,
+                            score_breakdown={'Manual Restore to Roving': 0.0}
+                         )
+
             shift.user = new_user
             shift.score = 0.0
             shift.score_breakdown = {'Manual Override': 0.0}
