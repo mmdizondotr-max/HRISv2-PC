@@ -43,13 +43,13 @@ class ScheduleRevampTests(TestCase):
         # -1 (Prev week same shop)
         # -1 (Prev week any shop)
         # Score = 18
-        score1 = calculate_assignment_score(self.user1, self.shop1, self.today, history_data, current_assignments)
+        score1, _ = calculate_assignment_score(self.user1, self.shop1, self.today, history_data, current_assignments)
         self.assertEqual(score1, 18.0)
 
         # Calculate Score for User 2 on Shop 1 Today
         # Base: 20
         # Score = 20
-        score2 = calculate_assignment_score(self.user2, self.shop1, self.today, history_data, current_assignments)
+        score2, _ = calculate_assignment_score(self.user2, self.shop1, self.today, history_data, current_assignments)
         self.assertEqual(score2, 20.0)
 
     def test_current_week_deductions(self):
@@ -69,7 +69,7 @@ class ScheduleRevampTests(TestCase):
         # Base 20
         # -2 (Duty count in current week is 1)
         # Score = 18
-        score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
+        score, _ = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
         self.assertEqual(score, 18.0)
 
     def test_same_shop_bonus_removed_but_consecutive_added(self):
@@ -90,7 +90,7 @@ class ScheduleRevampTests(TestCase):
         # -2 (Duty count 1)
         # +1 (Consecutive day same shop bonus)
         # Score = 19
-        score = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
+        score, _ = calculate_assignment_score(self.user1, self.shop1, tuesday, history_data, current_assignments)
         self.assertEqual(score, 19.0)
 
     def test_absent_bonus(self):
@@ -110,7 +110,7 @@ class ScheduleRevampTests(TestCase):
         # Base 20
         # +4 (Absent)
         # Score = 24
-        score = calculate_assignment_score(self.user1, self.shop1, self.today, history_data, current_assignments)
+        score, _ = calculate_assignment_score(self.user1, self.shop1, self.today, history_data, current_assignments)
         self.assertEqual(score, 24.0)
 
     def test_preferred_day_off_deduction(self):
@@ -133,5 +133,5 @@ class ScheduleRevampTests(TestCase):
         # Base: 20
         # Deduction: -5.0 (Preferred Day Off)
         # Expected: 15.0
-        score = calculate_assignment_score(user_pref, self.shop1, today, history_data, current_assignments)
+        score, _ = calculate_assignment_score(user_pref, self.shop1, today, history_data, current_assignments)
         self.assertEqual(score, 15.0)
