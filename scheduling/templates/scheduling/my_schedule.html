@@ -62,6 +62,8 @@
                                                         <span class="text-danger small fw-bold">ABSENT</span>
                                                     {% elif shift.status == 'substituted' %}
                                                         <span class="text-danger">➜</span> <span class="badge bg-warning text-dark">{{ shift.actual_user.get_short_name_for_schedule }}</span>
+                                                    {% elif shift.status == 'supplement' %}
+                                                        <span class="text-success small fw-bold">SUPPLEMENT</span>
                                                     {% endif %}
                                                 </div>
                                             {% endfor %}

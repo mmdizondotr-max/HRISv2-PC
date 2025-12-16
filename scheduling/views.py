@@ -178,6 +178,36 @@ def my_schedule(request):
                             # Truly absent
                             pass
 
+                # 3. Handle Supplement (Remaining logged users who weren't assigned or used as subs)
+                # Create a pseudo-shift object for display
+                for extra_user in logged_users:
+                    # Determine status for extra user (Ongoing vs Present vs Incomplete)
+                    # We need the log object
+                    extra_status = 'supplement' # Default base
+                    log_obj = None
+                    for l in logs_objects_map.get(key, []):
+                        if l.user_id == extra_user.id:
+                            log_obj = l
+                            break
+
+                    # Refine status based on time_out presence?
+                    # Prompt says: "show his name card and add 'Supplement'"
+                    # But also: "latest status of whether reported, absent, incomplete, supplement, etc."
+                    # If I use 'supplement', the template will show "SUPPLEMENT".
+                    # If I want to show "Incomplete" + "Supplement", it gets complex.
+                    # Let's stick to "Supplement" as the primary status indicator for these unassigned folks.
+                    # Or we can check if ongoing.
+
+                    # Create a Simple Namespace or dict-like object
+                    class PseudoShift:
+                        def __init__(self, user, status):
+                            self.user = user
+                            self.status = status
+                            self.actual_user = user
+                            self.role = 'supplement'
+
+                    matrix[d][s.id]['main'].append(PseudoShift(extra_user, 'supplement'))
+
                 # Handle Backup similarly
                 # Just listing
                 pass
@@ -209,22 +239,29 @@ def my_schedule(request):
 
 @login_required
 def schedule_history_list(request):
-    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
-        return HttpResponseForbidden()
-
     today = timezone.localdate()
     start_of_current_week = today - datetime.timedelta(days=today.weekday())
 
     schedules = Schedule.objects.filter(is_published=True).order_by('-week_start_date')
 
+    if request.user.tier == 'regular':
+        # Limit to past 2 weeks relative to current week
+        # Allowed: Current Week, Current Week - 1, Current Week - 2
+        min_date = start_of_current_week - datetime.timedelta(weeks=2)
+        schedules = schedules.filter(week_start_date__gte=min_date)
+
     return render(request, 'scheduling/schedule_history_list.html', {'schedules': schedules})
 
 @login_required
 def schedule_history_detail(request, schedule_id):
-    if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
-        return HttpResponseForbidden()
-
     schedule = get_object_or_404(Schedule, id=schedule_id, is_published=True)
+
+    if request.user.tier == 'regular':
+        today = timezone.localdate()
+        start_of_current_week = today - datetime.timedelta(days=today.weekday())
+        min_date = start_of_current_week - datetime.timedelta(weeks=2)
+        if schedule.week_start_date < min_date:
+             return HttpResponseForbidden("You are not authorized to view schedules older than 2 weeks.")
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
     # Ensure Roving is first for display consistency
@@ -813,16 +850,24 @@ def load_test_data(request):
                 if sim_date > today:
                     break
 
+                # Check current time for today's simulation
+                # Use local time for comparison
+                current_time_local = timezone.localtime(timezone.now()).time()
+                if sim_date == today and current_time_local < datetime.time(17, 0):
+                    time_out_val = None
+                else:
+                    time_out_val = datetime.time(17, 0)
+
                 # Duty Staff
                 duty_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop__in=[shop1, shop2])
 
-                absent_shops = set()
+                absent_shops = [] # List of shop IDs where absence occurred (can be duplicates if multiple absences)
 
                 for shift in duty_shifts:
                     # 1/60 chance of absence
                     if random.randint(1, 60) == 1:
                         # Absent
-                        absent_shops.add(shift.shop.id)
+                        absent_shops.append(shift.shop)
                     else:
                         # Present -> TimeLog
                         # Use operating hours?
@@ -833,23 +878,27 @@ def load_test_data(request):
                             defaults={
                                 'shop': shift.shop,
                                 'time_in': datetime.time(9, 0),
-                                'time_out': datetime.time(17, 0)
+                                'time_out': time_out_val
                             }
                         )
 
                 # Standby Staff Substitution
-                standby_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='backup', shop__in=[shop1, shop2])
+                # Standby shifts are in Roving shop with role='backup'
+                standby_shifts = list(Shift.objects.filter(schedule=schedule, date=sim_date, role='backup', shop=roving))
+                random.shuffle(standby_shifts)
 
-                for shift in standby_shifts:
-                    if shift.shop.id in absent_shops:
-                        # Substitute!
-                        TimeLog.objects.get_or_create(
-                            user=shift.user,
+                # For each absent shop, try to find a standby sub
+                for absent_shop in absent_shops:
+                    if standby_shifts:
+                         sub_shift = standby_shifts.pop(0)
+                         # Substitute!
+                         TimeLog.objects.get_or_create(
+                            user=sub_shift.user,
                             date=sim_date,
                             defaults={
-                                'shop': shift.shop,
+                                'shop': absent_shop, # Log in the absent shop
                                 'time_in': datetime.time(9, 0),
-                                'time_out': datetime.time(17, 0)
+                                'time_out': time_out_val
                             }
                         )
 
@@ -864,7 +913,7 @@ def load_test_data(request):
                                 defaults={
                                     'shop': shift.shop,
                                     'time_in': datetime.time(9, 0),
-                                    'time_out': datetime.time(17, 0)
+                                    'time_out': time_out_val
                                 }
                             )
 

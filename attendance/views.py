@@ -45,7 +45,10 @@ def home(request):
     except TimeLog.DoesNotExist:
         todays_log = None
 
-    shops = Shop.objects.filter(is_active=True)
+    if request.user.tier == 'regular':
+        shops = request.user.applicable_shops.filter(is_active=True)
+    else:
+        shops = Shop.objects.filter(is_active=True)
 
     if request.method == 'POST':
         action = request.POST.get('action')
