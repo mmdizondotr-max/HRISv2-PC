@@ -70,21 +70,20 @@ def my_schedule(request):
         week_end_date = dates[-1]
         logs = TimeLog.objects.filter(date__range=[dates[0], week_end_date]).select_related('user', 'shop')
         logs_map = {} # (date, shop_id) -> list of users who logged in
+        logs_objects_map = {} # (date, shop_id) -> list of TimeLog objects
 
         for log in logs:
             if not log.shop: continue
             key = (log.date, log.shop.id)
             if key not in logs_map:
                 logs_map[key] = []
+                logs_objects_map[key] = []
             logs_map[key].append(log.user)
+            logs_objects_map[key].append(log)
 
         for shift in shifts:
             if shift.date in matrix and shift.shop.id in matrix[shift.date]:
                 # Determine actual attendance status
-                # 1. Did shift.user log in at shift.shop on shift.date?
-                # 2. If not, who logged in? (Substitution)
-                # 3. If no one, Absent.
-
                 status_dict = {'assigned': shift.user, 'actual': None, 'status': 'absent'}
 
                 key = (shift.date, shift.shop.id)
@@ -100,40 +99,12 @@ def my_schedule(request):
                 if found:
                     status_dict['actual'] = shift.user
                     status_dict['status'] = 'present'
-                    # Remove from logged_users to avoid double counting if multiple shifts?
-                    # Complex if multiple slots. But typically 1 slot per user per shop per day.
-                    # We won't remove for now, simple matching.
                 else:
-                    # Assigned user NOT present.
-                    # Is there a substitute?
-                    # Pick a user from logged_users who is NOT assigned to another main shift at this shop today?
-                    # This logic is complex.
-                    # User request: "Actual attendance for each slot (i.e. who actually reported)"
-                    # Simple heuristic:
-                    # If I am assigned, and I am not there, look for someone who IS there and wasn't assigned (or just list mismatches).
-                    # Issue: Mapping specific extra person to specific missing person.
-                    # If 2 missing and 2 extra, who maps to whom? Doesn't matter, just show one.
-
-                    # Let's try to grab an "unclaimed" log.
-                    # We need to be smarter.
-                    # Maybe just pass ALL logs for the cell and let template render?
-                    # But the structure is slot-based.
-
-                    # Let's map based on index if multiple?
-                    # For this shift, if not present, pick the first log user that isn't matched to another shift?
-                    # Too expensive to do perfect matching here.
-
-                    # Simplification:
-                    # If user present -> Actual: User
-                    # If user absent -> Actual: "Absent" (unless we find a sub)
-
-                    pass
-
-                # We will defer the "Sub" logic to a second pass or just render "Absent" if not found,
-                # and maybe add "Unassigned Attendance" list?
-                # But user wants "Assigned -> Actual".
-                # Let's try to find a substitute: Any user in logged_users not assigned to a shift in this shop/date?
-                # This requires knowing all shifts first.
+                     # Absent Logic: "Only appears if date has passed"
+                     if shift.date < today:
+                          status_dict['status'] = 'absent'
+                     else:
+                          status_dict['status'] = '' # Future/Today absent is just blank
 
                 if shift.role == 'main':
                     matrix[shift.date][shift.shop.id]['main'].append(shift)
@@ -149,14 +120,8 @@ def my_schedule(request):
                 logged_users = logs_map.get(key, [])[:] # copy
 
                 # 1. Mark Present
-                # We need to wrap shifts in a dict or object to add attributes
-                # Since 'shift' is a model instance, we can attach attributes dynamically (python)
-
-                # First pass: Match assigned
                 matched_logs = []
                 for shift in shifts_list:
-                    # check if shift.user in logged_users
-                    # We need to match objects or IDs.
                     match = None
                     for u in logged_users:
                         if u.id == shift.user.id:
@@ -165,11 +130,36 @@ def my_schedule(request):
 
                     if match:
                         shift.actual_user = shift.user
-                        shift.status = 'present'
+
+                        # Find the actual log object to check times
+                        log_obj = None
+                        for l in logs_objects_map.get(key, []):
+                            if l.user_id == shift.user.id:
+                                log_obj = l
+                                break
+
+                        if log_obj:
+                             if log_obj.time_in and log_obj.time_out:
+                                 shift.status = 'present'
+                             elif log_obj.time_in and not log_obj.time_out:
+                                 if d == today:
+                                     shift.status = 'ongoing' # Display "Ongoing"
+                                 elif d < today:
+                                     shift.status = 'incomplete' # Display "Incomplete Log"
+                                 else:
+                                     shift.status = 'present' # Should not happen for future
+                             else:
+                                 shift.status = 'present' # Fallback
+                        else:
+                             shift.status = 'present'
+
                         matched_logs.append(match)
                     else:
                         shift.actual_user = None
-                        shift.status = 'absent'
+                        if d < today:
+                            shift.status = 'absent'
+                        else:
+                            shift.status = ''
 
                 # Remove matched from available logs
                 for m in matched_logs:
@@ -188,50 +178,8 @@ def my_schedule(request):
                             # Truly absent
                             pass
 
-                # Handle Backup similarly?
-                # Backup shifts usually don't have a "slot" unless they are activated.
-                # If a backup user logs in, they are effectively working.
-                # But usually backup works at Roving? Or at the shop they cover?
-                # If they work at the shop they cover, they appear in logs for that shop.
-                # If they were assigned 'backup' at Roving (or global pool), and work at Shop A.
-                # They will appear in Shop A logs.
-                # They won't appear in Roving logs.
-                # So in 'Roving' display, they appear as 'Assigned Backup'.
-                # If they didn't work at Roving, they are "Absent" from Roving? No, backup doesn't have to work unless needed.
-                # So for Backup slots, "Actual" might not be relevant unless they worked *at that shop*.
-                # If they worked at *another* shop, that's fine.
-
-                # However, the user said "For each slot... show both assigned and actual".
-                # For a Standby slot, if they didn't work, is it "Absent"? No.
-                # Only if they were CALLED and didn't show? We don't track "Called".
-                # So for Standby, maybe just show "Ready"? or "Did not work".
-                # OR: if they logged in at Roving (unlikely for standby), show it.
-                # If they logged in elsewhere, maybe show "Worked at Shop X"?
-                # That's complex.
-                # Let's focus on DUTY slots for "Actual vs Assigned".
-                # For Backup, we'll just check if they logged in AT THE ASSIGNED SHOP (Roving).
-                # If not, we leave it?
-                # Or maybe user implies "Who actually reported" applies mainly to Duty.
-                # I'll apply the logic to Backup too, but usually they won't log in at Roving unless they are literally Roving Standby.
-
-                backup_list = matrix[d][s.id]['backup']
-                # Same logic...
-                matched_logs_b = []
-                # Refresh logs for this shop (Roving usually)
-                logged_users_b = logs_map.get(key, [])[:]
-                # Exclude those matched to Main already?
-                # Main logic used 'logged_users' which was a copy.
-                # We should probably use a shared pool of logs for the shop if Main and Backup share the shop.
-                # But Main and Backup lists are separate.
-                # Let's filter out logs used by Main.
-
-                used_log_ids = [u.id for u in matched_logs] # Main matched specific users
-                # Also substitues used specific users.
-                # Actually, in the main loop we popped from logged_users.
-                # So 'logged_users' variable at end of main loop contains remaining logs?
-                # No, because I re-fetched `logs_map.get(key, [])[:]` for backup which resets it.
-                # I should do it in one go.
-
+                # Handle Backup similarly
+                # Just listing
                 pass
 
         return {
@@ -239,7 +187,7 @@ def my_schedule(request):
             'dates': dates,
             'matrix': matrix,
             'change_logs': schedule_obj.change_logs.all().order_by('-created_at'),
-            'logs_map': logs_map # Passing raw map if needed, but we attached to shift objects
+            'logs_map': logs_map
         }
 
     # Current Week
@@ -295,12 +243,38 @@ def schedule_history_detail(request, schedule_id):
             matrix[d][s.id] = {'main': [], 'backup': []}
 
     shifts = schedule.shifts.all().select_related('user', 'shop')
+
+    # Fetch logs to determine status (Absent/Substituted)
+    week_end = dates[-1]
+    logs = TimeLog.objects.filter(date__range=[dates[0], week_end]).select_related('user', 'shop')
+    logs_map = {}
+    for log in logs:
+        if log.shop:
+            key = (log.date, log.shop.id)
+            if key not in logs_map:
+                logs_map[key] = []
+            logs_map[key].append(log.user)
+
     for shift in shifts:
         if shift.date in matrix and shift.shop.id in matrix[shift.date]:
-             if shift.role == 'main':
-                 matrix[shift.date][shift.shop.id]['main'].append(shift.user)
+             # Determine Status (Simplified for History)
+             # Check if present in logs
+             key = (shift.date, shift.shop.id)
+             shop_logs = logs_map.get(key, [])
+
+             is_present = any(u.id == shift.user.id for u in shop_logs)
+
+             if is_present:
+                 shift.status = 'present'
+                 shift.actual_user = shift.user
              else:
-                 matrix[shift.date][shift.shop.id]['backup'].append(shift.user)
+                 shift.status = 'absent'
+                 shift.actual_user = None
+
+             if shift.role == 'main':
+                 matrix[shift.date][shift.shop.id]['main'].append(shift)
+             else:
+                 matrix[shift.date][shift.shop.id]['backup'].append(shift)
 
     return render(request, 'scheduling/schedule_history_detail.html', {
         'schedule': schedule,
@@ -382,11 +356,6 @@ def generator(request):
                 else:
                     matrix[shift.date][shift.shop.id]['backup'].append(shift)
 
-        # Attach duty counts to user objects in shifts for display?
-        # Easier to pass a separate map or update the shift user object temporarily.
-        # But shift.user is a User instance.
-        # Let's create a helper map in the week_data
-
         weeks_data.append({
             'schedule': schedule,
             'dates': dates,
@@ -454,6 +423,31 @@ def _generate_multi_week_schedule(shops, weeks):
         # But standard use case:
         # If prev_week_end < timezone.localdate(), we assume history is valid.
         use_attendance_history = prev_week_end < timezone.localdate()
+
+        # Simulation Logic for Future Weeks (Preview Weeks 2-4)
+        # "Assume that Week 1 has 100% attendance (no substitutions)"
+        if not use_attendance_history:
+             # Check if prev_week_shifts exist (they should if we just generated them)
+             if prev_week_shifts:
+                 # Construct Simulated Logs from Shifts (Assume 100% attendance for Main shifts)
+                 simulated_logs = []
+                 for shift in prev_week_shifts:
+                     if shift.role == 'main':
+                         # Create a dummy TimeLog object (not saved to DB)
+                         # We need user, shop, date.
+                         # Note: shift.user is a User object.
+                         t = TimeLog(
+                             user=shift.user,
+                             shop=shift.shop,
+                             date=shift.date,
+                             time_in=datetime.time(9,0),
+                             time_out=datetime.time(17,0)
+                         )
+                         simulated_logs.append(t)
+
+                 history_data['prev_week_logs'] = simulated_logs
+                 # Enable history usage since we now have simulated logs
+                 use_attendance_history = True
 
         current_assignments = CurrentWeekAssignments()
 
