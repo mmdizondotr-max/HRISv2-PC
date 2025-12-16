@@ -9,6 +9,9 @@ class UserRegistrationForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ['first_name', 'last_name', 'username', 'password', 'photo_id']
+        labels = {
+            'photo_id': 'Valid ID Picture'
+        }
 
     def clean(self):
         cleaned_data = super().clean()

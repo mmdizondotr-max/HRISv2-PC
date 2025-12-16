@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
 from .models import Shop, TimeLog, ShopOperatingHours
-from scheduling.models import ShopRequirement
+from scheduling.models import ShopRequirement, Schedule
 from .forms import ShopForm, ShopRequirementForm, ShopOperatingHoursForm
 from .forms_edit import TimeLogEditForm
 from django.forms import inlineformset_factory
@@ -46,7 +46,31 @@ def home(request):
         todays_log = None
 
     if request.user.tier == 'regular':
-        shops = request.user.applicable_shops.filter(is_active=True)
+        # Default applicable shops
+        applicable = request.user.applicable_shops.filter(is_active=True)
+
+        # Shops assigned in current and next week's published schedules
+        start_of_week = today - datetime.timedelta(days=today.weekday())
+        start_of_next_week = start_of_week + datetime.timedelta(days=7)
+
+        # Use week_start_date__gte to catch future weeks too, or specific check
+        schedules = Schedule.objects.filter(
+            week_start_date__in=[start_of_week, start_of_next_week],
+            is_published=True
+        )
+
+        assigned_shop_ids = set()
+        for sch in schedules:
+            # Find shifts for this user in these schedules
+            shifts = sch.shifts.filter(user=request.user)
+            for s in shifts:
+                assigned_shop_ids.add(s.shop.id)
+
+        if assigned_shop_ids:
+            assigned_shops = Shop.objects.filter(id__in=assigned_shop_ids, is_active=True)
+            shops = (applicable | assigned_shops).distinct()
+        else:
+            shops = applicable
     else:
         shops = Shop.objects.filter(is_active=True)
 

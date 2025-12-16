@@ -154,8 +154,9 @@
               <p>Current Assignment: <span id="currentAssignedName" class="fw-bold"></span></p>
               <div class="mb-3">
                   <label for="new_user_select" class="form-label">Select New Staff:</label>
-                  <select class="form-select" name="user_id" id="new_user_select" required>
+                  <select class="form-select" name="user_id" id="new_user_select">
                       <option value="">-- Select Staff --</option>
+                      <option value="REMOVE">-- Remove Staff (Empty Slot) --</option>
                       {% for u in all_users %}
                         <option value="{{ u.id }}">{{ u.get_full_name }} ({{ u.username }})</option>
                       {% endfor %}
