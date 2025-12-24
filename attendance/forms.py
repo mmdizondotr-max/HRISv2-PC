@@ -14,10 +14,9 @@ class ShopForm(forms.ModelForm):
 class ShopRequirementForm(forms.ModelForm):
     class Meta:
         model = ShopRequirement
-        fields = ['required_main_staff', 'required_reserve_staff']
+        fields = ['required_main_staff']
         widgets = {
             'required_main_staff': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
-            'required_reserve_staff': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
         }
 
 class ShopOperatingHoursForm(forms.ModelForm):

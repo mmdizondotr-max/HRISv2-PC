@@ -16,7 +16,10 @@ def ensure_roving_shop_and_assignments():
     all_users = User.objects.filter(is_active=True)
 
     for user in all_users:
-        current_applicable = set(user.applicable_shops.all())
+        # Check if user already has assigned shops. If so, respect manual assignment.
+        if user.applicable_shops.exists():
+            continue
+
         target_applicable = set()
 
         if user.tier == 'supervisor':
@@ -25,12 +28,7 @@ def ensure_roving_shop_and_assignments():
             for s in regular_shops:
                 target_applicable.add(s)
 
-        if user.tier == 'supervisor':
-            if set(current_applicable) != target_applicable:
-                user.applicable_shops.set(target_applicable)
-        elif user.tier == 'regular':
-             if set(current_applicable) != target_applicable:
-                user.applicable_shops.set(target_applicable)
+        user.applicable_shops.set(target_applicable)
 
 def calculate_assignment_score(user, shop, date, history_data, current_week_assignments, min_duty_count_among_eligible=None, use_attendance_history=True):
     """
