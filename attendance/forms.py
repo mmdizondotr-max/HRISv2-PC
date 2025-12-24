@@ -1,13 +1,17 @@
 from django import forms
 from .models import Shop, ShopOperatingHours
 from scheduling.models import ShopRequirement
+from accounts.models import Area
 
 class ShopForm(forms.ModelForm):
+    area = forms.ModelChoiceField(queryset=Area.objects.all(), required=False, label="Area")
+
     class Meta:
         model = Shop
-        fields = ['name', 'is_active']
+        fields = ['name', 'area', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'area': forms.Select(attrs={'class': 'form-control'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 

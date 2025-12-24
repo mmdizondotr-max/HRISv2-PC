@@ -120,6 +120,15 @@ def shop_list(request):
         return HttpResponseForbidden("Unauthorized")
 
     shops = Shop.objects.all()
+
+    # Filter by Area for Supervisors (and potentially Admins if we wanted to view per area, but prompt says Admins manage all)
+    # "Supervisors ... shop creation privileges for employees and shops under their Area."
+    if request.user.tier == 'supervisor' and not request.user.is_superuser:
+        if request.user.area:
+            shops = shops.filter(area=request.user.area)
+        else:
+            shops = shops.none()
+
     return render(request, 'attendance/shop_list.html', {'shops': shops})
 
 @login_required
@@ -128,7 +137,13 @@ def shop_manage(request, shop_id=None):
         return HttpResponseForbidden("Unauthorized")
 
     if shop_id:
-        shop = get_object_or_404(Shop, id=shop_id)
+        # Check permissions for edit
+        # If Supervisor, check if shop belongs to their area
+        if request.user.tier == 'supervisor' and not request.user.is_superuser:
+             shop = get_object_or_404(Shop, id=shop_id, area=request.user.area)
+        else:
+             shop = get_object_or_404(Shop, id=shop_id)
+
         # Ensure requirement exists
         if not hasattr(shop, 'requirement'):
             ShopRequirement.objects.create(shop=shop)
@@ -146,8 +161,23 @@ def shop_manage(request, shop_id=None):
     if request.method == 'POST':
         form = ShopForm(request.POST, instance=shop)
 
+        # Supervisor cannot set Area; it's auto-assigned. Admin can set Area.
+        if request.user.tier == 'supervisor' and not request.user.is_superuser:
+             # Force Area to Supervisor's Area
+             # If creating new or editing existing?
+             # If editing, we checked area above.
+             # If creating, we must assign.
+             form.instance.area = request.user.area
+
+             # Remove 'area' from form validation/saving if present in POST but user is supervisor?
+             # Actually, if we exclude it from form in Init, it works.
+             pass
+
         if form.is_valid():
-            created_shop = form.save()
+            created_shop = form.save(commit=False)
+            if request.user.tier == 'supervisor' and not request.user.is_superuser:
+                created_shop.area = request.user.area
+            created_shop.save()
 
             # Retrieve existing requirement reliably or create new
             req_instance, _ = ShopRequirement.objects.get_or_create(shop=created_shop)
@@ -170,6 +200,12 @@ def shop_manage(request, shop_id=None):
                     return redirect('attendance:shop_list')
     else:
         form = ShopForm(instance=shop)
+
+        # Hide Area field for Supervisors
+        if request.user.tier == 'supervisor' and not request.user.is_superuser:
+            if 'area' in form.fields:
+                del form.fields['area']
+
         if shop_id:
             req_instance = shop.requirement
             req_form = ShopRequirementForm(instance=req_instance)

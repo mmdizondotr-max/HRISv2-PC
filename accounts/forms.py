@@ -1,14 +1,15 @@
 from django import forms
-from .models import User
+from .models import User, Area
 from attendance.models import Shop
 
 class UserRegistrationForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
     confirm_password = forms.CharField(widget=forms.PasswordInput)
+    area = forms.ModelChoiceField(queryset=Area.objects.all(), required=False, label="Area (Leave blank if Unassigned)")
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'username', 'password', 'photo_id']
+        fields = ['first_name', 'last_name', 'username', 'password', 'photo_id', 'area']
         labels = {
             'photo_id': 'Valid ID Picture'
         }
@@ -60,9 +61,10 @@ class UserPromotionForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ['tier', 'applicable_shops']
+        fields = ['tier', 'area', 'applicable_shops']
         widgets = {
             'tier': forms.Select(attrs={'class': 'form-select'}),
+            'area': forms.Select(attrs={'class': 'form-select'}),
             'applicable_shops': forms.CheckboxSelectMultiple(),
         }
 
@@ -81,6 +83,17 @@ class UserPromotionForm(forms.ModelForm):
                 # Supervisors cannot change tiers
                 if 'tier' in self.fields:
                     del self.fields['tier']
+                # Supervisors cannot change Area (or at least, the requirement doesn't say they can. It implies Admins do)
+                # "Administrators can transfer any Regular and Supervisor accounts to any Area from the Account List."
+                # So we hide 'area' for Supervisors.
+                if 'area' in self.fields:
+                    del self.fields['area']
+
+                # Filter applicable_shops to their Area
+                if self.current_user.area:
+                     self.fields['applicable_shops'].queryset = Shop.objects.filter(is_active=True, area=self.current_user.area)
+                else:
+                     self.fields['applicable_shops'].queryset = Shop.objects.none()
 
 class ForgotPasswordForm(forms.Form):
     first_name = forms.CharField(

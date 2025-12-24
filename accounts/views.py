@@ -63,7 +63,22 @@ def approvals(request):
         return HttpResponseForbidden("You are not authorized to view this page.")
 
     pending_users = User.objects.filter(is_active=False, is_approved=False).order_by('-date_joined')
+
+    # Filter by Area for Supervisors
+    if request.user.tier == 'supervisor' and not request.user.is_superuser:
+        if request.user.area:
+            pending_users = pending_users.filter(area=request.user.area)
+        else:
+            pending_users = pending_users.none()
+
     pending_resets = PasswordResetRequest.objects.all().order_by('-created_at')
+    # Resets also need filtering?
+    # Logic: Supervisors can only approve resets for users in their area.
+    if request.user.tier == 'supervisor' and not request.user.is_superuser:
+        if request.user.area:
+             pending_resets = pending_resets.filter(user__area=request.user.area)
+        else:
+             pending_resets = pending_resets.none()
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -149,6 +164,13 @@ def account_list(request):
         return HttpResponseForbidden("You are not authorized to view this page.")
 
     users = User.objects.all().order_by('last_name')
+
+    if request.user.tier == 'supervisor' and not request.user.is_superuser:
+        if request.user.area:
+            users = users.filter(area=request.user.area)
+        else:
+            users = users.none()
+
     return render(request, 'accounts/account_list.html', {'users': users})
 
 @login_required
@@ -196,6 +218,7 @@ def account_promote(request, user_id):
         old_tier = target_user.tier
         old_active = target_user.is_active
         old_shops = set(target_user.applicable_shops.all())
+        old_area = target_user.area
 
         form = UserPromotionForm(request.POST, instance=target_user, current_user=request.user)
         if form.is_valid():
@@ -206,6 +229,48 @@ def account_promote(request, user_id):
             # Capture State After Save
             new_tier = user.tier
             new_shops = set(user.applicable_shops.all())
+            new_area = user.area
+
+            # Logic: If Area Changed, Update Applicable Shops
+            # "Administrators can transfer any Regular and Supervisor accounts to any Area...
+            #  Ensure the Load Test Function will take the new features into account."
+            # Implicit requirement: If a user moves Area, their shop assignments might be invalid (they belong to old Area).
+            # We should probably clear assignments or let the user reassign manually.
+            # The prompt says: "Daily Time Records should not be affected... since it will just show the shops at which the staff reported to"
+            # But for scheduling, we should probably clear invalid shops.
+
+            if old_area != new_area:
+                 # Check if shops belong to new area?
+                 # If user has shops from Old Area, they should be removed?
+                 # Let's enforce that users only have shops from their Area (except maybe Roving? Roving is per Area now too).
+
+                 # Current shops:
+                 current_assignments = user.applicable_shops.all()
+                 valid_assignments = []
+                 if new_area:
+                     for s in current_assignments:
+                         if s.area == new_area:
+                             valid_assignments.append(s)
+
+                 # If we changed area, and the form didn't already handle shop selection (it allows selecting valid shops),
+                 # but if we just changed the Area dropdown and hit save, the 'applicable_shops' field in form might have been
+                 # populated with OLD area shops?
+                 # Wait, 'applicable_shops' queryset in form init is filtered.
+                 # If Admin changes Area AND Shops in same submit, it works.
+                 # If Admin changes ONLY Area, the Shops (checkboxes) submitted would be the ones checked.
+                 # If the checkboxes showed Old Area shops, and we submit them, we are assigning Old Area shops to New Area user.
+                 # This violates strict Area separation.
+
+                 # However, handling this dynamically in a single POST is hard without JS.
+                 # Let's assume Admin is responsible for unchecking old shops or we auto-clean.
+                 # Auto-clean seems safer.
+
+                 if new_area:
+                     invalid_shops = user.applicable_shops.exclude(area=new_area)
+                     if invalid_shops.exists():
+                         for s in invalid_shops:
+                             user.applicable_shops.remove(s)
+                         messages.warning(request, "Removed shop assignments incompatible with the new Area.")
 
             # Handle suspension logic from form
             is_suspended = form.cleaned_data.get('suspend_user')

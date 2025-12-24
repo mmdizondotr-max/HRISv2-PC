@@ -5,6 +5,7 @@ from django.utils import timezone
 class Shop(models.Model):
     name = models.CharField(max_length=100)
     supervisors = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='supervised_shops')
+    area = models.ForeignKey('accounts.Area', on_delete=models.SET_NULL, null=True, blank=True, related_name='shops')
     is_active = models.BooleanField(default=True)
 
     def __str__(self):

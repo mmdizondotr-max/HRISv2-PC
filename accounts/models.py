@@ -3,6 +3,12 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.utils import timezone
 
+class Area(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+
 class User(AbstractUser):
     TIER_CHOICES = (
         ('regular', 'Regular'),
@@ -23,6 +29,7 @@ class User(AbstractUser):
     )
 
     applicable_shops = models.ManyToManyField('attendance.Shop', blank=True, related_name='applicable_staff')
+    area = models.ForeignKey(Area, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
 
     class Meta:
         unique_together = ('first_name', 'last_name')
