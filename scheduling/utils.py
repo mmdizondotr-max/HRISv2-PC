@@ -6,14 +6,23 @@ from attendance.models import Shop
 from django.db.models import Q
 
 def ensure_roving_shop_and_assignments():
-    from accounts.models import User
-    roving_shop, created = Shop.objects.get_or_create(name="Roving")
-    if created or not roving_shop.is_active:
-        roving_shop.is_active = True
-        roving_shop.save()
+    from accounts.models import User, Area
 
-    regular_shops = Shop.objects.filter(is_active=True).exclude(id=roving_shop.id)
-    all_users = User.objects.filter(is_active=True)
+    # Ensure Global Roving (or Unassigned Roving if needed) exists?
+    # Actually, we need to ensure Roving exists FOR EACH AREA.
+
+    areas = Area.objects.all()
+    for area in areas:
+        roving_shop, created = Shop.objects.get_or_create(name="Roving", area=area)
+        if created or not roving_shop.is_active:
+            roving_shop.is_active = True
+            roving_shop.save()
+
+    # Handle Unassigned Area if needed (User created but no area assigned yet?)
+    # If user has no Area, they probably shouldn't be assigned to any shop yet.
+
+    # Only process users who have an Area
+    all_users = User.objects.filter(is_active=True).exclude(area=None)
 
     for user in all_users:
         # Check if user already has assigned shops. If so, respect manual assignment.
@@ -22,8 +31,15 @@ def ensure_roving_shop_and_assignments():
 
         target_applicable = set()
 
+        # Determine Roving for this user's Area
+        roving_shop = Shop.objects.filter(name="Roving", area=user.area).first()
+
+        # Determine Regular shops for this user's Area
+        regular_shops = Shop.objects.filter(is_active=True, area=user.area).exclude(name="Roving")
+
         if user.tier == 'supervisor':
-            target_applicable.add(roving_shop)
+            if roving_shop:
+                target_applicable.add(roving_shop)
         elif user.tier == 'regular':
             for s in regular_shops:
                 target_applicable.add(s)

@@ -43,14 +43,25 @@ def my_schedule(request):
     start_of_current_week = today - datetime.timedelta(days=today.weekday())
     start_of_next_week = start_of_current_week + datetime.timedelta(days=7)
 
-    # Ensure Roving is first for display consistency
+    # Filter Shops by Area for Visibility
+    # "Schedules and current status of time-ins/outs are also now separated per Area. Administrators can see all areas, Supervisors can only see theirs."
+    # Regulars also only see theirs (confirmed in planning).
+
     shops_qs = Shop.objects.filter(is_active=True)
-    roving = shops_qs.filter(name='Roving').first()
-    others = list(shops_qs.exclude(name='Roving'))
-    if roving:
-        shops = [roving] + others
-    else:
-        shops = others
+
+    user_area = None
+    if request.user.tier != 'administrator' and not request.user.is_superuser:
+        if request.user.area:
+            user_area = request.user.area
+            shops_qs = shops_qs.filter(area=user_area)
+        else:
+            # Unassigned users see nothing? Or maybe they see nothing.
+            shops_qs = shops_qs.none()
+
+    # Sort: Roving first
+    roving_shops = list(shops_qs.filter(name='Roving'))
+    other_shops = list(shops_qs.exclude(name='Roving'))
+    shops = roving_shops + other_shops
 
     schedules_data = []
 
@@ -65,6 +76,16 @@ def my_schedule(request):
                 matrix[d][s.id] = {'main': [], 'backup': []}
 
         shifts = schedule_obj.shifts.all().select_related('user', 'shop')
+
+        # Filter shifts by shop (which is already filtered by Area)
+        # However, for Administrators seeing "All Areas", we want to display them organized.
+        # But 'shops' list handles the columns.
+        # If Admin, 'shops' contains ALL shops.
+
+        # NOTE: Roving Visibility Logic
+        # "If Global: Does a Supervisor in "Area A" see "Roving" in their list? If so, do they see all staff in Roving, or only staff from "Area A" who are currently in Roving?"
+        # Answer: Roving is now per Area. So Supervisor A sees Roving A.
+        # So standard shop filtering works.
 
         # Fetch TimeLogs for the week
         week_end_date = dates[-1]
@@ -267,14 +288,18 @@ def schedule_history_detail(request, schedule_id):
              return HttpResponseForbidden("You are not authorized to view schedules older than 2 weeks.")
 
     dates = [schedule.week_start_date + datetime.timedelta(days=i) for i in range(7)]
-    # Ensure Roving is first for display consistency
+
+    # Filter Shops by Area
     shops_qs = Shop.objects.all()
-    roving = shops_qs.filter(name='Roving').first()
-    others = list(shops_qs.exclude(name='Roving'))
-    if roving:
-        shops = [roving] + others
-    else:
-        shops = others
+    if request.user.tier != 'administrator' and not request.user.is_superuser:
+        if request.user.area:
+            shops_qs = shops_qs.filter(area=request.user.area)
+        else:
+            shops_qs = shops_qs.none()
+
+    roving_shops = list(shops_qs.filter(name='Roving'))
+    other_shops = list(shops_qs.exclude(name='Roving'))
+    shops = roving_shops + other_shops
 
     matrix = {}
     for d in dates:
@@ -329,10 +354,31 @@ def schedule_history_detail(request, schedule_id):
 
 @login_required
 def generator(request):
+    from accounts.models import Area
     if request.user.tier not in ['supervisor', 'administrator'] and not request.user.is_superuser:
         return HttpResponseForbidden()
 
     ensure_roving_shop_and_assignments()
+
+    # Determine Target Area
+    target_area = None
+    areas = Area.objects.all()
+
+    if request.user.tier == 'supervisor' and not request.user.is_superuser:
+        target_area = request.user.area
+        if not target_area:
+             messages.error(request, "You are not assigned to an Area.")
+             return redirect('attendance:home')
+    else:
+        # Administrator/Superuser
+        area_id = request.GET.get('area_id')
+        if area_id:
+            target_area = get_object_or_404(Area, id=area_id)
+        else:
+            # If no Area selected, show selector (or default to first?)
+            # The prompt says: "Select a specific Area to generate the schedule for"
+            # We can let them select via a dropdown in GET param
+            pass
 
     today = timezone.localdate()
     days_until_monday = (0 - today.weekday()) % 7
@@ -350,20 +396,38 @@ def generator(request):
 
     current_schedule = weeks[0]
 
-    # Ensure Roving is first for display consistency
+    # Filter Shops
     shops_qs = Shop.objects.filter(is_active=True)
-    roving = shops_qs.filter(name='Roving').first()
-    others = list(shops_qs.exclude(name='Roving'))
-    if roving:
-        shops = [roving] + others
-    else:
-        shops = others
+
+    if target_area:
+        shops_qs = shops_qs.filter(area=target_area)
+    elif request.user.is_superuser or request.user.tier == 'administrator':
+        # If Admin hasn't selected an area, maybe show nothing or all?
+        # Prompt: "Select a specific Area to generate the schedule for"
+        # It implies generation is per-area.
+        # If no area selected, we probably shouldn't show the matrix or allow generate?
+        # But for UI consistency, let's wait for selection.
+        if not area_id:
+             shops_qs = shops_qs.none()
+
+    roving_shops = list(shops_qs.filter(name='Roving'))
+    other_shops = list(shops_qs.exclude(name='Roving'))
+    shops = roving_shops + other_shops
 
     if request.method == 'POST':
         if 'generate' in request.POST:
-            _generate_multi_week_schedule(shops, weeks)
-            messages.success(request, "Schedule generated for 4 weeks.")
-            return redirect('scheduling:generator')
+            if not target_area and (request.user.is_superuser or request.user.tier == 'administrator'):
+                 messages.error(request, "Please select an Area to generate schedule.")
+            else:
+                _generate_multi_week_schedule(shops, weeks, target_area)
+                messages.success(request, f"Schedule generated for 4 weeks for {target_area}.")
+
+            # Redirect preserving GET param
+            redirect_url = 'scheduling:generator'
+            if target_area and (request.user.is_superuser or request.user.tier == 'administrator'):
+                return redirect(f"{reverse('scheduling:generator')}?area_id={target_area.id}")
+            return redirect(redirect_url)
+
         elif 'publish' in request.POST:
             current_schedule.is_published = True
             current_schedule.save()
@@ -406,29 +470,35 @@ def generator(request):
             'duty_counts': duty_counts
         })
 
+    from django.urls import reverse # Import needed
     return render(request, 'scheduling/generator.html', {
         'weeks_data': weeks_data,
         'current_schedule': current_schedule,
         'shops': shops,
         'change_logs': current_schedule.change_logs.all().order_by('-created_at'),
+        'areas': areas,
+        'selected_area': target_area,
     })
 
-def _generate_multi_week_schedule(shops, weeks):
+def _generate_multi_week_schedule(shops, weeks, area):
     from accounts.models import User
 
     # 1. Prepare Data
-    all_users = list(User.objects.filter(is_active=True, is_approved=True).select_related('preference'))
+    # Filter users by Area
+    all_users = list(User.objects.filter(is_active=True, is_approved=True, area=area).select_related('preference'))
 
     roving_shop = None
     for s in shops:
         if s.name == 'Roving':
             roving_shop = s
             break
+
+    # Roving Shop must belong to the Area
     if not roving_shop:
-        roving_shop = Shop.objects.filter(name='Roving').first()
+        roving_shop = Shop.objects.filter(name='Roving', area=area).first()
         if not roving_shop:
              # Just in case
-             roving_shop, _ = Shop.objects.get_or_create(name='Roving', is_active=True)
+             roving_shop, _ = Shop.objects.get_or_create(name='Roving', area=area, is_active=True)
 
     # 2. Iterate Weeks
     for schedule in weeks:
@@ -1036,20 +1106,36 @@ def reset_data(request):
 
 @user_passes_test(lambda u: u.is_authenticated and (u.tier == 'administrator' or u.is_superuser))
 def load_test_data(request):
+    from accounts.models import Area
+
     if request.method == 'POST':
         # 0. Reset Data first
         reset_system_data(request.user)
 
-        # 1. Create Dummy Shops
-        shop1, _ = Shop.objects.get_or_create(name="Dummy Shop 1")
-        shop2, _ = Shop.objects.get_or_create(name="Dummy Shop 2")
-        shop1.is_active = True
-        shop2.is_active = True
-        shop1.save()
-        shop2.save()
+        # 1. Create 2 Areas
+        area1, _ = Area.objects.get_or_create(name="Area 1")
+        area2, _ = Area.objects.get_or_create(name="Area 2")
+
+        # Create Shops for Area 1
+        shop1_a1, _ = Shop.objects.get_or_create(name="A1 Shop 1", area=area1)
+        shop2_a1, _ = Shop.objects.get_or_create(name="A1 Shop 2", area=area1)
+        shop1_a1.is_active = True
+        shop2_a1.is_active = True
+        shop1_a1.save()
+        shop2_a1.save()
+
+        # Create Shops for Area 2
+        shop1_a2, _ = Shop.objects.get_or_create(name="A2 Shop 1", area=area2)
+        shop2_a2, _ = Shop.objects.get_or_create(name="A2 Shop 2", area=area2)
+        shop1_a2.is_active = True
+        shop2_a2.is_active = True
+        shop1_a2.save()
+        shop2_a2.save()
+
+        all_shops = [shop1_a1, shop2_a1, shop1_a2, shop2_a2]
 
         # Operating Hours
-        for shop in [shop1, shop2]:
+        for shop in all_shops:
             for day in range(7):
                 ShopOperatingHours.objects.get_or_create(
                     shop=shop, day=day,
@@ -1057,163 +1143,153 @@ def load_test_data(request):
                 )
 
         # Requirements
-        # Shop 1: Duty=2, Standby=1
-        r1, _ = ShopRequirement.objects.get_or_create(shop=shop1)
-        r1.required_main_staff = 2
-        r1.required_reserve_staff = 1
-        r1.save()
+        # Area 1 Shops: Duty=2
+        for s in [shop1_a1, shop2_a1]:
+            r, _ = ShopRequirement.objects.get_or_create(shop=s)
+            r.required_main_staff = 2
+            r.required_reserve_staff = 1
+            r.save()
 
-        # Shop 2: Duty=1, Standby=1
-        r2, _ = ShopRequirement.objects.get_or_create(shop=shop2)
-        r2.required_main_staff = 1
-        r2.required_reserve_staff = 1
-        r2.save()
+        # Area 2 Shops: Duty=2
+        for s in [shop1_a2, shop2_a2]:
+            r, _ = ShopRequirement.objects.get_or_create(shop=s)
+            r.required_main_staff = 2
+            r.required_reserve_staff = 1
+            r.save()
 
         # 2. Create Dummy Users
-        # 4 Regulars, 1 Supervisor
-        first_names = ['James', 'John', 'Robert', 'Michael', 'William', 'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth']
+        # Total: 10 Regulars (5 per area), 2 Supervisors (1 per area)
+        first_names = ['James', 'John', 'Robert', 'Michael', 'William', 'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth',
+                       'David', 'Richard', 'Joseph', 'Thomas', 'Charles']
 
-        # Select 5 unique names
-        chosen_names = random.sample(first_names, 5)
+        # Select 12 unique names
+        chosen_names = random.sample(first_names, 12)
+        name_idx = 0
 
-        dummy_users = []
-        for i in range(1, 5):
-            fname = chosen_names[i-1]
-            u, _ = User.objects.get_or_create(username=f"dummy_user_{i}", defaults={
+        # Helper to create user
+        def create_user(role, area, idx_offset):
+            nonlocal name_idx
+            fname = chosen_names[name_idx]
+            name_idx += 1
+            username = f"user_{role}_{area.name.replace(' ', '')}_{idx_offset}"
+            u, _ = User.objects.get_or_create(username=username, defaults={
                 'first_name': fname,
-                'last_name': "Dummy",
-                'email': f"dummy{i}@example.com",
-                'tier': 'regular',
-                'is_approved': True
+                'last_name': f"Dummy{area.id}",
+                'email': f"{username}@example.com",
+                'tier': role,
+                'is_approved': True,
+                'area': area
             })
             u.set_password("dummy")
             u.save()
-            dummy_users.append(u)
+            return u
 
-        fname_sup = chosen_names[4]
-        sup, _ = User.objects.get_or_create(username="dummy_supervisor", defaults={
-            'first_name': fname_sup,
-            'last_name': "Dummy",
-            'email': "dummysup@example.com",
-            'tier': 'supervisor',
-            'is_approved': True
-        })
-        sup.set_password("dummy")
-        sup.save()
+        # Area 1 Users
+        users_a1 = [create_user('regular', area1, i) for i in range(5)]
+        sup_a1 = create_user('supervisor', area1, 1)
 
-        # Assign Shops
-        # Regulars -> Both Dummy Shops
-        for u in dummy_users:
-            u.applicable_shops.add(shop1, shop2)
+        # Area 2 Users
+        users_a2 = [create_user('regular', area2, i) for i in range(5)]
+        sup_a2 = create_user('supervisor', area2, 1)
 
-        # Supervisor -> Roving (standard logic)
+        # Assign Shops (Regulars -> Shops in their area)
+        for u in users_a1:
+            u.applicable_shops.add(shop1_a1, shop2_a1)
+        for u in users_a2:
+            u.applicable_shops.add(shop1_a2, shop2_a2)
+
+        # Ensure Roving
         ensure_roving_shop_and_assignments()
 
         # 3. Simulation Loop (Past 8 weeks)
         today = timezone.localdate()
-        # Find start date: Monday 8 weeks ago
-        # Start of current week
         start_current_week = today - datetime.timedelta(days=today.weekday())
-        start_sim = start_current_week - datetime.timedelta(weeks=7) # 8 weeks total including current
+        start_sim = start_current_week - datetime.timedelta(weeks=7)
 
-        # Simulation Target Shops
-        target_shops = [shop1, shop2]
-        roving = Shop.objects.filter(name='Roving').first()
-        if roving:
-            target_shops.append(roving)
-
+        # Generate Schedules for both Areas iteratively
         for w in range(8):
             week_start = start_sim + datetime.timedelta(weeks=w)
-
-            # Create Schedule
             schedule, _ = Schedule.objects.get_or_create(week_start_date=week_start)
 
-            # Generate
-            _generate_schedule(target_shops, schedule)
+            # Generate for Area 1
+            # Get shops including Roving for Area 1
+            shops_a1 = list(Shop.objects.filter(area=area1)) # Includes regular + roving
+            _generate_multi_week_schedule(shops_a1, [schedule], area1)
 
-            # Publish
+            # Generate for Area 2
+            shops_a2 = list(Shop.objects.filter(area=area2))
+            _generate_multi_week_schedule(shops_a2, [schedule], area2)
+
             schedule.is_published = True
             schedule.save()
 
-            # Simulate Attendance for each day of this week
+            # Simulate Attendance
             for d in range(7):
                 sim_date = week_start + datetime.timedelta(days=d)
+                if sim_date > today: break
 
-                # Stop if future
-                if sim_date > today:
-                    break
-
-                # Check current time for today's simulation
-                # Use local time for comparison
                 current_time_local = timezone.localtime(timezone.now()).time()
                 if sim_date == today and current_time_local < datetime.time(17, 0):
                     time_out_val = None
                 else:
                     time_out_val = datetime.time(17, 0)
 
+                # Process all shifts for this day
+                # We need to filter shifts by relevant shops to handle attendance correctly?
+                # Actually we can just iterate all shifts for this day, regardless of area.
+
                 # Duty Staff
-                duty_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop__in=[shop1, shop2])
+                duty_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main')
 
-                absent_shops = [] # List of shop IDs where absence occurred (can be duplicates if multiple absences)
+                # Group by Area for Substitution Logic?
+                # Substitutes must come from SAME Area.
 
-                for shift in duty_shifts:
-                    # 1/60 chance of absence
-                    if random.randint(1, 60) == 1:
-                        # Absent
-                        absent_shops.append(shift.shop)
-                    else:
-                        # Present -> TimeLog
-                        # Use operating hours?
-                        # Assuming 9-17
-                        TimeLog.objects.get_or_create(
-                            user=shift.user,
-                            date=sim_date,
-                            defaults={
-                                'shop': shift.shop,
-                                'time_in': datetime.time(9, 0),
-                                'time_out': time_out_val
-                            }
-                        )
+                # Let's process per Area to ensure substitutes are correct
+                for area_loop in [area1, area2]:
+                    area_shops = Shop.objects.filter(area=area_loop)
+                    roving = area_shops.filter(name='Roving').first()
 
-                # Standby Staff Substitution
-                # Standby shifts are in Roving shop with role='backup'
-                standby_shifts = list(Shift.objects.filter(schedule=schedule, date=sim_date, role='backup', shop=roving))
-                random.shuffle(standby_shifts)
+                    duty_shifts_area = duty_shifts.filter(shop__in=area_shops)
+                    absent_shops = []
 
-                # For each absent shop, try to find a standby sub
-                for absent_shop in absent_shops:
-                    if standby_shifts:
-                         sub_shift = standby_shifts.pop(0)
-                         # Substitute!
-                         TimeLog.objects.get_or_create(
-                            user=sub_shift.user,
-                            date=sim_date,
-                            defaults={
-                                'shop': absent_shop, # Log in the absent shop
-                                'time_in': datetime.time(9, 0),
-                                'time_out': time_out_val
-                            }
-                        )
-
-                # Roving Supervisor?
-                if roving:
-                    sup_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop=roving)
-                    for shift in sup_shifts:
-                         if random.randint(1, 60) != 1:
+                    for shift in duty_shifts_area:
+                        if random.randint(1, 60) == 1:
+                            absent_shops.append(shift.shop)
+                        else:
                             TimeLog.objects.get_or_create(
                                 user=shift.user,
                                 date=sim_date,
-                                defaults={
-                                    'shop': shift.shop,
-                                    'time_in': datetime.time(9, 0),
-                                    'time_out': time_out_val
-                                }
+                                defaults={'shop': shift.shop, 'time_in': datetime.time(9, 0), 'time_out': time_out_val}
                             )
+
+                    # Standby Substitution (Same Area)
+                    if roving:
+                        standby_shifts = list(Shift.objects.filter(schedule=schedule, date=sim_date, role='backup', shop=roving))
+                        random.shuffle(standby_shifts)
+
+                        for absent_shop in absent_shops:
+                            if standby_shifts:
+                                sub_shift = standby_shifts.pop(0)
+                                TimeLog.objects.get_or_create(
+                                    user=sub_shift.user,
+                                    date=sim_date,
+                                    defaults={'shop': absent_shop, 'time_in': datetime.time(9, 0), 'time_out': time_out_val}
+                                )
+
+                        # Roving Supervisors
+                        sup_shifts = Shift.objects.filter(schedule=schedule, date=sim_date, role='main', shop=roving)
+                        for shift in sup_shifts:
+                             if random.randint(1, 60) != 1:
+                                TimeLog.objects.get_or_create(
+                                    user=shift.user,
+                                    date=sim_date,
+                                    defaults={'shop': shift.shop, 'time_in': datetime.time(9, 0), 'time_out': time_out_val}
+                                )
 
                 # Update Scores
                 update_scores_for_date(sim_date)
 
-        messages.success(request, "Load Test Data Generated Successfully (8 Weeks).")
+        messages.success(request, "Load Test Data Generated Successfully (8 Weeks, 2 Areas).")
         return redirect('scheduling:load_test_data')
 
     return render(request, 'scheduling/load_test_confirm.html')
